@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reconciliation Tool</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- XLSX.js no longer needed — processing handled by Python backend -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -266,13 +266,24 @@
     background: var(--blue-light); border: 1px solid #C7D2FE;
     border-radius: 8px; display: flex; flex-direction: column; gap: 6px;
   }
-  .group-config-row { display: flex; align-items: center; gap: 8px; }
-  .group-config-row label { font-size: 11px; font-weight: 600; color: var(--blue); min-width: 55px; }
+  .group-config-row { display: flex; align-items: flex-start; gap: 8px; }
+  .group-config-row label { font-size: 11px; font-weight: 600; color: var(--blue); min-width: 55px; padding-top: 2px; }
   .group-config-row select {
     font-size: 12px; padding: 4px 8px; border: 1px solid #C7D2FE;
     border-radius: 6px; background: #fff; color: var(--text-primary);
     outline: none; flex: 1;
   }
+  .group-col-checks {
+    display: flex; flex-wrap: wrap; gap: 4px; flex: 1;
+  }
+  .group-col-checks label {
+    display: flex; align-items: center; gap: 3px;
+    font-size: 11px; font-weight: 400; color: var(--text-primary);
+    background: #fff; border: 1px solid #C7D2FE; border-radius: 5px;
+    padding: 2px 7px; cursor: pointer; min-width: unset;
+  }
+  .group-col-checks label:hover { border-color: var(--blue); }
+  .group-col-checks input[type=checkbox] { margin: 0; accent-color: var(--blue); }
   .grouped-badge {
     font-size: 10px; font-weight: 700; background: var(--blue-light); border: 1px solid #C7D2FE;
     color: var(--blue); border-radius: 20px; padding: 2px 8px; white-space: nowrap; align-self: flex-start;
@@ -420,6 +431,15 @@
 
   <!-- Run -->
   <button class="run-btn hidden" id="runBtn" onclick="runAll()">▶ Run All Pairs</button>
+  <div id="progressWrap" class="hidden" style="margin-bottom:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span id="progressLabel" style="font-size:12px;font-weight:600;color:var(--text-secondary);">Processing…</span>
+      <span id="progressPct" style="font-size:12px;font-weight:700;color:var(--blue);">0%</span>
+    </div>
+    <div style="height:8px;background:var(--surface);border-radius:4px;border:1px solid var(--border);overflow:hidden;">
+      <div id="progressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#4F6EF7,#7C3AED);border-radius:4px;transition:width .15s ease;"></div>
+    </div>
+  </div>
 
   <!-- Results -->
   <div id="resultsSection" class="hidden">
@@ -445,6 +465,27 @@
       <button class="dl-btn" onclick="exportExcel()">⬇ Download All Results Excel</button>
     </div>
 
+    <!-- Per-shop breakdown -->
+    <div id="perShopSection" class="hidden" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);margin-bottom:16px;overflow:hidden;">
+      <div style="padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--border);font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em;">Per-Shop Breakdown</div>
+      <div style="overflow-x:auto;">
+        <table id="perShopTable" style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="background:var(--surface);">
+              <th style="padding:8px 14px;text-align:left;font-weight:600;color:var(--text-secondary);border-bottom:1px solid var(--border);">Shop Pair</th>
+              <th style="padding:8px 14px;text-align:right;font-weight:600;color:var(--text-secondary);border-bottom:1px solid var(--border);">Total</th>
+              <th style="padding:8px 14px;text-align:right;font-weight:600;color:#16A34A;border-bottom:1px solid var(--border);">Matched</th>
+              <th style="padding:8px 14px;text-align:right;font-weight:600;color:#DC2626;border-bottom:1px solid var(--border);">Mismatched</th>
+              <th style="padding:8px 14px;text-align:right;font-weight:600;color:#D97706;border-bottom:1px solid var(--border);">Only A</th>
+              <th style="padding:8px 14px;text-align:right;font-weight:600;color:#D97706;border-bottom:1px solid var(--border);">Only B</th>
+              <th style="padding:8px 14px;text-align:right;font-weight:600;color:var(--text-secondary);border-bottom:1px solid var(--border);">Match %</th>
+            </tr>
+          </thead>
+          <tbody id="perShopBody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Per-pair tabs -->
     <div class="tabs-wrapper">
       <div class="tabs" id="pairTabs"></div>
@@ -456,9 +497,11 @@
 
 <script>
 // ── State ──
-const poolA = {}; // filename → {wb, rows, headers}
+// pool entries: {fileId, name, filename, sheets, currentSheet, headers, rowCount, fileSize, loading?}
+const poolA = {};
 const poolB = {};
-let allPairResults = []; // [{label, results}]
+let allPairResults = [];
+let currentJobId   = null;
 
 const NORMS = [
   {id:'order_id',   label:'Order ID cleanup'},
@@ -481,178 +524,175 @@ function selectPlatform(p, btn) {
   if (labelA) labelA.textContent = (PLAT_LABELS[p] || p) + ' Files (A)';
   // Clear all file state when platform changes
   [poolA, poolB].forEach(pool => Object.keys(pool).forEach(k => delete pool[k]));
-  Object.keys(fileConfig).forEach(k => delete fileConfig[k]);
-  Object.keys(sheetChoice).forEach(k => delete sheetChoice[k]);
   renderFileList('A');
   renderFileList('B');
   maybeShowPairing();
 }
 
-// ── Per-file config ──
-const fileConfig = {}; // fname → { mode: 'asis'|'grouped', groupCol: '', sumCol: '' }
-const sheetChoice = {}; // fname → sheetName
-
-function getFileConfig(fname) {
-  if (!fileConfig[fname]) fileConfig[fname] = { mode: 'asis', groupCol: '', sumCol: '' };
-  return fileConfig[fname];
-}
-
-// Generic grouping: one row per unique groupCol value, sumCol aggregated
-function applyGrouping(rawRows, groupCol, sumCol) {
-  const groups = new Map();
-  rawRows.forEach(row => {
-    const key = String(row[groupCol] ?? '').trim();
-    if (!key) return;
-    if (!groups.has(key)) groups.set(key, { [groupCol]: key, [sumCol]: 0 });
-    const amt = parseFloat(row[sumCol] ?? 0);
-    if (!isNaN(amt)) {
-      const cur = groups.get(key)[sumCol];
-      groups.get(key)[sumCol] = Math.round((cur + amt) * 100) / 100;
-    }
-  });
-  return Array.from(groups.values());
-}
-
-function applyFileConfig(fname, pool) {
+// ── Sheet change (API call) ──
+async function changeSheet(fname, sheetName, side) {
+  const pool = side === 'A' ? poolA : poolB;
   const f = pool[fname];
   if (!f) return;
-  const cfg = getFileConfig(fname);
-  if (cfg.mode === 'grouped' && cfg.groupCol && cfg.sumCol) {
-    f.rows = applyGrouping(f.rawRows, cfg.groupCol, cfg.sumCol);
-    f.headers = [cfg.groupCol, cfg.sumCol];
-  } else {
-    f.rows = f.rawRows;
-    f.headers = f.rawHeaders;
+  try {
+    const res  = await fetch('/api/sheet', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({fileId: f.fileId, sheet: sheetName}),
+    });
+    const data = await res.json();
+    if (data.error) { alert('Sheet error: ' + data.error); return; }
+    f.currentSheet = sheetName;
+    f.headers      = data.headers;
+    f.rowCount     = data.rowCount;
+    renderFileList(side);
+    onPairChange();
+  } catch(e) {
+    alert('Could not change sheet: ' + e.message);
   }
 }
 
-function changeSheet(fname, sheetName, side) {
-  sheetChoice[fname] = sheetName;
+// ── File loading (server upload) ──
+async function loadFiles(side, input) {
   const pool = side === 'A' ? poolA : poolB;
-  const f = pool[fname];
-  if (!f || !f.wb) return;
-  const ws = f.wb.Sheets[sheetName];
-  f.rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-  f.rawHeaders = f.rawRows.length ? Object.keys(f.rawRows[0]) : [];
-  // Reset group cols when sheet changes
-  const cfg = getFileConfig(fname);
-  cfg.groupCol = ''; cfg.sumCol = '';
-  applyFileConfig(fname, pool);
-  renderFileList(side);
-  onPairChange();
-}
+  for (const f of Array.from(input.files)) {
+    // Placeholder while uploading
+    pool[f.name] = {fileId: null, name: f.name, filename: f.name, sheets: [],
+                    currentSheet: '', headers: [], rowCount: 0, fileSize: f.size, loading: true};
+    renderFileList(side);
 
-function setFileMode(fname, side, mode) {
-  const pool = side === 'A' ? poolA : poolB;
-  getFileConfig(fname).mode = mode;
-  applyFileConfig(fname, pool);
-  renderFileList(side);
-  onPairChange();
-}
-
-function setGroupCol(fname, side, col) {
-  const pool = side === 'A' ? poolA : poolB;
-  getFileConfig(fname).groupCol = col;
-  applyFileConfig(fname, pool);
-  renderFileList(side);
-  onPairChange();
-}
-
-function setSumCol(fname, side, col) {
-  const pool = side === 'A' ? poolA : poolB;
-  getFileConfig(fname).sumCol = col;
-  applyFileConfig(fname, pool);
-  renderFileList(side);
-  onPairChange();
-}
-
-// ── File loading ──
-function loadFiles(side, input) {
-  const pool = side === 'A' ? poolA : poolB;
-  Array.from(input.files).forEach(f => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const wb = XLSX.read(e.target.result, { type: 'array' });
-      if (!sheetChoice[f.name]) sheetChoice[f.name] = wb.SheetNames[0];
-      const ws = wb.Sheets[sheetChoice[f.name]];
-      const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-      const rawHeaders = rawRows.length ? Object.keys(rawRows[0]) : [];
-      pool[f.name] = { wb, rawRows, rawHeaders, rows: rawRows, headers: rawHeaders, name: f.name, sheetNames: wb.SheetNames };
-      applyFileConfig(f.name, pool);
+    const formData = new FormData();
+    formData.append('file', f);
+    try {
+      const res  = await fetch('/api/upload', {method: 'POST', body: formData});
+      const data = await res.json();
+      if (data.error) {
+        alert('Upload error for ' + f.name + ': ' + data.error);
+        delete pool[f.name];
+        renderFileList(side);
+        continue;
+      }
+      pool[f.name] = {
+        fileId:       data.fileId,
+        name:         f.name,
+        filename:     f.name,
+        sheets:       data.sheets,
+        currentSheet: data.currentSheet,
+        headers:      data.headers,
+        rowCount:     data.rowCount,
+        fileSize:     data.fileSize || f.size,
+        groupMode:    'asis',
+        groupCol:     [],
+        sumCol:       '',
+      };
       renderFileList(side);
       maybeShowPairing();
-    };
-    reader.readAsArrayBuffer(f);
-  });
+    } catch(e) {
+      alert('Upload failed for ' + f.name + ': ' + e.message);
+      delete pool[f.name];
+      renderFileList(side);
+    }
+  }
 }
 
 function removeFile(side, fname) {
   const pool = side === 'A' ? poolA : poolB;
   delete pool[fname];
-  delete fileConfig[fname];
-  delete sheetChoice[fname];
   renderFileList(side);
   refreshPairSelects();
   maybeShowPairing();
 }
 
+function setFileMode(fname, side, mode) {
+  const pool = side === 'A' ? poolA : poolB;
+  if (!pool[fname]) return;
+  pool[fname].groupMode = mode;
+  pool[fname].groupCol  = [];
+  pool[fname].sumCol    = '';
+  renderFileList(side);
+}
+
+function toggleGroupCol(fname, side, col, checked) {
+  const pool = side === 'A' ? poolA : poolB;
+  if (!pool[fname]) return;
+  const arr = pool[fname].groupCol;
+  if (checked && !arr.includes(col)) arr.push(col);
+  else if (!checked) pool[fname].groupCol = arr.filter(c => c !== col);
+  renderFileList(side);
+}
+
+function setSumCol(fname, side, col) {
+  const pool = side === 'A' ? poolA : poolB;
+  if (!pool[fname]) return;
+  pool[fname].sumCol = col;
+  renderFileList(side);
+}
+
 function renderFileList(side) {
   const pool = side === 'A' ? poolA : poolB;
-  const el = document.getElementById('list' + side);
+  const el   = document.getElementById('list' + side);
   el.innerHTML = Object.values(pool).map(f => {
     const safeName = f.name.replace(/'/g, "\\'");
-    const cfg = getFileConfig(f.name);
 
-    // Sheet picker (multi-sheet files only)
+    if (f.loading) {
+      return `<div class="file-pill-wrap"><div class="file-pill">
+        <span class="pill-name" title="${f.name}">${f.name}</span>
+        <span class="pill-rows" style="color:var(--blue)">⏳ Uploading to server…</span>
+      </div></div>`;
+    }
+
+    const sizeLabel = f.fileSize ? (f.fileSize >= 1048576 ? (f.fileSize/1048576).toFixed(1)+' MB' : Math.round(f.fileSize/1024)+' KB') : '';
+    const bigFile   = f.fileSize && f.fileSize > 50*1048576;
+
     let sheetHtml = '';
-    if (f.sheetNames && f.sheetNames.length > 1) {
-      const cur = sheetChoice[f.name] || f.sheetNames[0];
+    if (f.sheets && f.sheets.length > 1) {
       sheetHtml = `<div class="sheet-picker-row">
         <label>📋 Sheet</label>
         <select onchange="changeSheet('${safeName}',this.value,'${side}')">
-          ${f.sheetNames.map(s => `<option value="${s}"${s===cur?' selected':''}>${s}</option>`).join('')}
+          ${f.sheets.map(s => `<option value="${s}"${s===f.currentSheet?' selected':''}>${s}</option>`).join('')}
         </select>
       </div>`;
     }
 
     // Mode toggle
     const modeHtml = `<div class="mode-toggle">
-      <button class="mode-btn${cfg.mode==='asis'?' active':''}"    onclick="setFileMode('${safeName}','${side}','asis')">As Is</button>
-      <button class="mode-btn${cfg.mode==='grouped'?' active':''}" onclick="setFileMode('${safeName}','${side}','grouped')">Group By</button>
+      <button class="mode-btn${f.groupMode==='asis'?' active':''}"    onclick="setFileMode('${safeName}','${side}','asis')">As Is</button>
+      <button class="mode-btn${f.groupMode==='grouped'?' active':''}" onclick="setFileMode('${safeName}','${side}','grouped')">Group By</button>
     </div>`;
 
-    // Group config panel (only when mode = grouped)
+    // Group config panel
     let groupHtml = '';
-    if (cfg.mode === 'grouped') {
-      const cols = f.rawHeaders || [];
-      const ready = cfg.groupCol && cfg.sumCol;
+    if (f.groupMode === 'grouped') {
+      const cols  = f.headers || [];
+      const ready = f.groupCol.length > 0 && f.sumCol;
+      const groupCols = Array.isArray(f.groupCol) ? f.groupCol : (f.groupCol ? [f.groupCol] : []);
       groupHtml = `<div class="group-config">
         <div class="group-config-row">
           <label>Group by</label>
-          <select onchange="setGroupCol('${safeName}','${side}',this.value)">
-            <option value="">(select column)</option>
-            ${cols.map(c => `<option value="${c}"${c===cfg.groupCol?' selected':''}>${c}</option>`).join('')}
-          </select>
+          <div class="group-col-checks">
+            ${cols.map(c => `<label><input type="checkbox" ${groupCols.includes(c)?'checked':''} onchange="toggleGroupCol('${safeName}','${side}','${c.replace(/'/g,"\\'")}',this.checked)">${c}</label>`).join('')}
+          </div>
         </div>
         <div class="group-config-row">
           <label>Sum</label>
           <select onchange="setSumCol('${safeName}','${side}',this.value)">
             <option value="">(select column)</option>
-            ${cols.map(c => `<option value="${c}"${c===cfg.sumCol?' selected':''}>${c}</option>`).join('')}
+            ${cols.map(c => `<option value="${c}"${c===f.sumCol?' selected':''}>${c}</option>`).join('')}
           </select>
         </div>
         ${ready
-          ? `<span class="grouped-badge">✓ ${f.rows.length.toLocaleString()} groups</span>`
-          : `<span style="font-size:11px;color:var(--text-muted)">Select both columns above to apply</span>`}
+          ? `<span class="grouped-badge">✓ Group by [${groupCols.join(', ')}], sum ${f.sumCol}</span>`
+          : `<span style="font-size:11px;color:var(--text-muted)">Check group columns and select sum column above</span>`}
       </div>`;
     }
 
     return `<div class="file-pill-wrap">
       <div class="file-pill">
         <span class="pill-name" title="${f.name}">${f.name}</span>
-        <span class="pill-rows">${f.rows.length.toLocaleString()} rows</span>
+        <span class="pill-rows">${(f.rowCount||0).toLocaleString()} rows${sizeLabel ? ' · '+sizeLabel : ''}</span>
         <button class="pill-rm" onclick="removeFile('${side}','${safeName}')">×</button>
       </div>
+      ${bigFile ? `<div style="font-size:11px;color:#16A34A;margin-top:3px;">✓ Large file (${sizeLabel}) — will be processed by server.</div>` : ''}
       ${sheetHtml}${modeHtml}${groupHtml}
     </div>`;
   }).join('');
@@ -745,8 +785,13 @@ function onPairChange() {
 function getPairs() {
   return Array.from(document.querySelectorAll('#pairRows .pair-row')).map(row => {
     const [selA, selB] = row.querySelectorAll('.pair-sel');
-    return {nameA: selA.value, nameB: selB.value};
-  }).filter(p => p.nameA && p.nameB && poolA[p.nameA] && poolB[p.nameB]);
+    const nA = selA.value, nB = selB.value;
+    const fA = poolA[nA],  fB = poolB[nB];
+    if (!nA || !nB || !fA || !fB || !fA.fileId || !fB.fileId) return null;
+    return {nameA: nA, nameB: nB,
+            fileIdA: fA.fileId, fileIdB: fB.fileId,
+            sheetA: fA.currentSheet, sheetB: fB.currentSheet};
+  }).filter(Boolean);
 }
 
 // ── Column Mapping ──
@@ -836,57 +881,100 @@ function buildKey(row, side, keys) {
   return keys.map(k => norm(row[side==='A' ? k.colA : k.colB], k.rules)).join('|||');
 }
 
-// ── Run ──
-function runAll() {
+// ── Progress helpers ──
+function setProgress(pct, label) {
+  document.getElementById('progressBar').style.width   = pct + '%';
+  document.getElementById('progressPct').textContent   = Math.round(pct) + '%';
+  document.getElementById('progressLabel').textContent = label;
+}
+
+// ── Run (server-side via API) ──
+async function runAll() {
   const pairs = getPairs();
   const maps  = getMaps();
   const keys  = maps.filter(m => m.role === 'key');
   const comps = maps.filter(m => m.role === 'compare');
 
-  if (!keys.length) { alert('Mark at least one column as a Join Key.'); return; }
-  if (!pairs.length) { alert('Add at least one file pair.'); return; }
+  if (!keys.length)  { alert('Mark at least one column as a Join Key.'); return; }
+  if (!pairs.length) { alert('Add at least one file pair (all files must finish uploading).'); return; }
 
-  allPairResults = pairs.map(pair => {
-    const dA = poolA[pair.nameA].rows;
-    const dB = poolB[pair.nameB].rows;
-    const mA = new Map(), mB = new Map();
-    dA.forEach(r => mA.set(buildKey(r,'A',keys), r));
-    dB.forEach(r => mB.set(buildKey(r,'B',keys), r));
-    const allKeys = new Set([...mA.keys(), ...mB.keys()]);
-    const results = [];
-    allKeys.forEach(k => {
-      const rA = mA.get(k), rB = mB.get(k);
-      if (!rA) { results.push({key:k, status:'only_in_B', rowA:null, rowB:rB, details:[]}); return; }
-      if (!rB) { results.push({key:k, status:'only_in_A', rowA:rA,  rowB:null, details:[]}); return; }
-      let ok = true;
-      const details = comps.map(m => {
-        const va = norm(rA[m.colA], m.rules), vb = norm(rB[m.colB], m.rules);
-        const match = (va==='__EMPTY__' && vb==='__EMPTY__') || va===vb;
-        if (!match) ok = false;
-        return {colA:m.colA, colB:m.colB, va:String(rA[m.colA]??''), vb:String(rB[m.colB]??''), match};
-      });
-      results.push({key:k, status:ok?'match':'mismatch', rowA:rA, rowB:rB, details});
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Processing…';
+  document.getElementById('progressWrap').classList.remove('hidden');
+  document.getElementById('resultsSection').classList.add('hidden');
+  setProgress(0, 'Sending job to server…');
+
+  try {
+    // Start job
+    const startRes = await fetch('/api/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        pairs: pairs.map(p => ({
+          ...p,
+          groupConfigA: poolA[p.nameA] ? {mode: poolA[p.nameA].groupMode, groupCol: poolA[p.nameA].groupCol, sumCol: poolA[p.nameA].sumCol} : null,
+          groupConfigB: poolB[p.nameB] ? {mode: poolB[p.nameB].groupMode, groupCol: poolB[p.nameB].groupCol, sumCol: poolB[p.nameB].sumCol} : null,
+        })),
+        keys,
+        comps,
+        dateColA: document.getElementById('dateColA').value,
+        dateColB: document.getElementById('dateColB').value,
+      }),
     });
-    return {
-      label: `${pair.nameA.replace(/\.[^.]+$/,'')} ↔ ${pair.nameB.replace(/\.[^.]+$/,'')}`,
-      nameA: pair.nameA, nameB: pair.nameB,
-      results,
-      headersA: poolA[pair.nameA].headers,
-      headersB: poolB[pair.nameB].headers,
-    };
-  });
+    const {jobId, error: startErr} = await startRes.json();
+    if (startErr) throw new Error(startErr);
+    currentJobId = jobId;
 
-  // Aggregate stats
-  const allResults = allPairResults.flatMap(p => p.results);
-  document.getElementById('sTotal').textContent = allResults.length;
-  document.getElementById('sMatch').textContent = allResults.filter(r=>r.status==='match').length;
-  document.getElementById('sMm').textContent    = allResults.filter(r=>r.status==='mismatch').length;
-  document.getElementById('sOnlyA').textContent = allResults.filter(r=>r.status==='only_in_A').length;
-  document.getElementById('sOnlyB').textContent = allResults.filter(r=>r.status==='only_in_B').length;
+    // Poll status
+    await new Promise((resolve, reject) => {
+      const interval = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`/api/job/${jobId}/status`);
+          const s = await statusRes.json();
+          setProgress(s.progress || 0, s.label || '…');
+          if (s.status === 'done')  { clearInterval(interval); resolve(); }
+          if (s.status === 'error') { clearInterval(interval); reject(new Error(s.error || 'Server error')); }
+        } catch(e) { clearInterval(interval); reject(e); }
+      }, 800);
+    });
 
-  renderPairTabs();
-  document.getElementById('resultsSection').classList.remove('hidden');
-  document.getElementById('resultsSection').scrollIntoView({behavior:'smooth', block:'start'});
+    // Fetch results
+    setProgress(100, 'Loading results…');
+    const resRes  = await fetch(`/api/job/${jobId}/results`);
+    const resData = await resRes.json();
+    if (resData.error) throw new Error(resData.error);
+
+    allPairResults = resData.results;
+
+    // Aggregate stats from pre-computed summaries
+    const totals = allPairResults.reduce((acc, p) => {
+      acc.total      += p.summary.total;
+      acc.match      += p.summary.match;
+      acc.mismatch   += p.summary.mismatch;
+      acc.only_in_A  += p.summary.only_in_A;
+      acc.only_in_B  += p.summary.only_in_B;
+      return acc;
+    }, {total:0, match:0, mismatch:0, only_in_A:0, only_in_B:0});
+
+    document.getElementById('sTotal').textContent  = totals.total.toLocaleString();
+    document.getElementById('sMatch').textContent  = totals.match.toLocaleString();
+    document.getElementById('sMm').textContent     = totals.mismatch.toLocaleString();
+    document.getElementById('sOnlyA').textContent  = totals.only_in_A.toLocaleString();
+    document.getElementById('sOnlyB').textContent  = totals.only_in_B.toLocaleString();
+
+    renderPairTabs();
+    document.getElementById('resultsSection').classList.remove('hidden');
+    document.getElementById('resultsSection').scrollIntoView({behavior:'smooth', block:'start'});
+
+  } catch(e) {
+    alert('Reconciliation failed: ' + e.message);
+    setProgress(0, 'Error — see alert');
+  } finally {
+    document.getElementById('progressWrap').classList.add('hidden');
+    btn.disabled = false;
+    btn.innerHTML = '▶ Run All Pairs';
+  }
 }
 
 // ── Render tabs per pair ──
@@ -900,7 +988,8 @@ function renderPairTabs() {
     // Tab button
     const tab = document.createElement('div');
     tab.className = 'tab' + (i===0?' active':'');
-    tab.textContent = `Pair ${i+1}: ${pair.label}`;
+    tab.textContent = `Pair ${i+1}`;
+    tab.title = pair.label;
     tab.onclick = () => switchPairTab(i);
     tabBar.appendChild(tab);
 
@@ -911,6 +1000,32 @@ function renderPairTabs() {
     body.innerHTML = renderPairBody(pair);
     tabBodies.appendChild(body);
   });
+
+  // Per-shop breakdown table
+  const perShopSection = document.getElementById('perShopSection');
+  const perShopBody    = document.getElementById('perShopBody');
+  if (allPairResults.length > 1) {
+    perShopBody.innerHTML = allPairResults.map((pair, i) => {
+      const {total, match: matched, mismatch: mm, only_in_A: onlyA, only_in_B: onlyB} = pair.summary;
+      const pct     = total ? Math.round(matched/total*100) : 0;
+      const pctColor = pct>=95?'#16A34A':pct>=80?'#D97706':'#DC2626';
+      return `<tr style="border-bottom:1px solid var(--border);cursor:pointer;" onclick="switchPairTab(${i})" title="Click to view pair ${i+1} details">
+        <td style="padding:8px 14px;color:var(--text-primary);font-weight:500;">
+          <span style="display:inline-block;background:var(--blue-light);color:var(--blue);font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;margin-right:6px;">Pair ${i+1}</span>
+          ${pair.label}
+        </td>
+        <td style="padding:8px 14px;text-align:right;color:var(--text-secondary);">${total.toLocaleString()}</td>
+        <td style="padding:8px 14px;text-align:right;color:#16A34A;font-weight:600;">${matched.toLocaleString()}</td>
+        <td style="padding:8px 14px;text-align:right;color:${mm?'#DC2626':'#9CA3AF'};font-weight:${mm?'600':'400'};">${mm.toLocaleString()}</td>
+        <td style="padding:8px 14px;text-align:right;color:${onlyA?'#D97706':'#9CA3AF'};">${onlyA.toLocaleString()}</td>
+        <td style="padding:8px 14px;text-align:right;color:${onlyB?'#D97706':'#9CA3AF'};">${onlyB.toLocaleString()}</td>
+        <td style="padding:8px 14px;text-align:right;color:${pctColor};font-weight:700;">${pct}%</td>
+      </tr>`;
+    }).join('');
+    perShopSection.classList.remove('hidden');
+  } else {
+    perShopSection.classList.add('hidden');
+  }
 }
 
 function switchPairTab(idx) {
@@ -922,11 +1037,7 @@ function renderPairBody(pair) {
   const maps  = getMaps();
   const keys  = maps.filter(m => m.role === 'key');
   const comps = maps.filter(m => m.role === 'compare');
-  const r = pair.results;
-  const matchCount = r.filter(x=>x.status==='match').length;
-  const mmCount    = r.filter(x=>x.status==='mismatch').length;
-  const onlyA      = r.filter(x=>x.status==='only_in_A').length;
-  const onlyB      = r.filter(x=>x.status==='only_in_B').length;
+  const {match: matchCount, mismatch: mmCount, only_in_A: onlyA, only_in_B: onlyB} = pair.summary;
 
   const miniStats = `
     <div class="pair-result-header">
@@ -942,8 +1053,8 @@ function renderPairBody(pair) {
       <div class="inner-tab active" onclick="switchInnerTab('rows_${uid}','ins_${uid}',this)">Row Results</div>
       <div class="inner-tab" onclick="switchInnerTab('ins_${uid}','rows_${uid}',this)">Insights</div>
     </div>
-    <div id="rows_${uid}">${buildTable(r, keys, comps)}</div>
-    <div id="ins_${uid}" class="hidden">${buildInsights(r)}</div>`;
+    <div id="rows_${uid}">${buildTable(pair.displayRows || [], keys, comps)}</div>
+    <div id="ins_${uid}" class="hidden">${buildInsights(pair.insights)}</div>`;
 
   return miniStats + innerTabHtml;
 }
@@ -987,66 +1098,44 @@ function buildTable(results, keys, comps) {
     html += `<tr>${keyCells}<td>${badge}</td>${compCells}</tr>`;
   });
   html += '</tbody></table></div>';
-  if (sorted.length>500) html += `<p class="note">Showing 500 of ${sorted.length} rows.</p>`;
+  if (sorted.length>500) html += `<p class="note">Showing 500 of ${sorted.length.toLocaleString()} rows. Download Excel for the full set.</p>`;
   return html;
 }
 
-function buildInsights(results) {
-  const maps  = getMaps();
-  const keys  = maps.filter(m => m.role === 'key');
-  const bad = results.filter(r => r.status !== 'match');
-  const colA = document.getElementById('dateColA').value;
-  const colB = document.getElementById('dateColB').value;
+function buildInsights(insights) {
+  if (!insights) return '<p style="padding:12px;font-size:12px;color:#9CA3AF">No insights data.</p>';
 
-  const colCounts = {};
-  results.filter(r=>r.status==='mismatch').forEach(r => {
-    r.details.filter(d=>!d.match).forEach(d => {
-      const lbl = d.colA===d.colB ? d.colA : `${d.colA}/${d.colB}`;
-      colCounts[lbl] = (colCounts[lbl]||0)+1;
-    });
-  });
+  let html = '<div class="insight-grid">';
 
-  let insightHtml = '<div class="insight-grid">';
-
-  if (colA||colB) {
-    const dc = {};
-    bad.forEach(r => { const d = getDateForRow(r)||'(no date)'; dc[d]=(dc[d]||0)+1; });
-    insightHtml += makeBarCardHtml(`Issues by Date`, dc, '#4F6EF7', 10);
+  if (insights.byDate && Object.keys(insights.byDate).length) {
+    html += makeBarCardHtml('Issues by Date', insights.byDate, '#4F6EF7', 10);
   } else {
-    insightHtml += `<div class="insight-card"><h3>Issues by Date</h3><p style="font-size:12px;color:#9CA3AF">No date field selected.</p></div>`;
+    html += `<div class="insight-card"><h3>Issues by Date</h3><p style="font-size:12px;color:#9CA3AF">No date field selected or no issues found.</p></div>`;
   }
 
-  insightHtml += makeBarCardHtml('Issue Type', {
-    'Value mismatch': results.filter(r=>r.status==='mismatch').length,
-    'Only in A': results.filter(r=>r.status==='only_in_A').length,
-    'Only in B': results.filter(r=>r.status==='only_in_B').length,
-  }, '#7C3AED', 5);
-
-  insightHtml += makeBarCardHtml('Mismatch by Column', colCounts, '#DC2626', 8);
-
-  insightHtml += makeBarCardHtml('Missing Direction', {
-    'Missing from Snowflake (only in A)': results.filter(r=>r.status==='only_in_A').length,
-    'Missing from Seller Center (only in B)': results.filter(r=>r.status==='only_in_B').length,
+  html += makeBarCardHtml('Issue Type', insights.issueType || {}, '#7C3AED', 5);
+  html += makeBarCardHtml('Mismatch by Column', insights.byColumn || {}, '#DC2626', 8);
+  html += makeBarCardHtml('Missing Direction', {
+    'Missing from Snowflake (only in A)': (insights.missingDir||{})['Only in A'] || 0,
+    'Missing from Seller Center (only in B)': (insights.missingDir||{})['Only in B'] || 0,
   }, '#D97706', 5);
 
-  insightHtml += '</div>';
+  html += '</div>';
 
   // Action box
-  const dc2 = {};
-  bad.forEach(r => { const d = getDateForRow(r)||'(no date)'; dc2[d]=(dc2[d]||0)+1; });
-  const topDate = Object.entries(dc2).sort((a,b)=>b[1]-a[1])[0];
-  const topCol  = Object.entries(colCounts).sort((a,b)=>b[1]-a[1])[0];
-  const onlyA   = results.filter(r=>r.status==='only_in_A').length;
-  const onlyB   = results.filter(r=>r.status==='only_in_B').length;
+  const topDate = Object.entries(insights.byDate || {}).sort((a,b)=>b[1]-a[1])[0];
+  const topCol  = Object.entries(insights.byColumn || {}).sort((a,b)=>b[1]-a[1])[0];
+  const onlyA   = (insights.missingDir||{})['Only in A'] || 0;
+  const onlyB   = (insights.missingDir||{})['Only in B'] || 0;
   const actions = [];
   if (topDate) actions.push(`Focus on <strong>${topDate[0]}</strong> — most issues (${topDate[1]} rows).`);
   if (topCol)  actions.push(`Column <strong>${topCol[0]}</strong> mismatches most (${topCol[1]} rows).`);
-  if (onlyA>onlyB) actions.push(`${onlyA} records in Seller Center missing from Snowflake — likely ingestion gaps.`);
-  else if (onlyB>onlyA) actions.push(`${onlyB} records in Snowflake missing from Seller Center — check for extra rows.`);
+  if (onlyA > onlyB) actions.push(`${onlyA.toLocaleString()} records in Seller Center missing from Snowflake — likely ingestion gaps.`);
+  else if (onlyB > onlyA) actions.push(`${onlyB.toLocaleString()} records in Snowflake missing from Seller Center — check for extra rows.`);
   if (actions.length) {
-    insightHtml += `<div class="action-box"><strong>💡 Next Steps</strong>${actions.map(a=>`<p>• ${a}</p>`).join('')}</div>`;
+    html += `<div class="action-box"><strong>💡 Next Steps</strong>${actions.map(a=>`<p>• ${a}</p>`).join('')}</div>`;
   }
-  return insightHtml;
+  return html;
 }
 
 function makeBarCardHtml(title, counts, fillColor, maxItems) {
@@ -1079,48 +1168,12 @@ function parseDate(v) {
   return s.slice(0,10)||null;
 }
 
-// ── Export ──
+// ── Export (server generates the Excel) ──
 function exportExcel() {
-  const wb = XLSX.utils.book_new();
-  const maps  = getMaps();
-  const keys  = maps.filter(m => m.role === 'key');
-  const comps = maps.filter(m => m.role === 'compare');
-
-  allPairResults.forEach((pair, idx) => {
-    const sheetBase = `pair${idx+1}`;
-    const mm = pair.results.filter(r => r.status === 'mismatch');
-    if (mm.length) {
-      const rows = mm.map(r => {
-        const obj = {__status:'mismatch', __key:r.key};
-        pair.headersA.forEach(c => obj['A_'+c] = r.rowA ? r.rowA[c]??'' : '');
-        pair.headersB.forEach(c => obj['B_'+c] = r.rowB ? r.rowB[c]??'' : '');
-        r.details.forEach(d => { obj['DIFF_'+d.colA] = d.match ? '' : '⚠ '+d.va+' ≠ '+d.vb; });
-        return obj;
-      });
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), sheetBase+'_mismatch');
-    }
-    const onlyA = pair.results.filter(r => r.status === 'only_in_A');
-    if (onlyA.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(onlyA.map(r=>({__status:'only_in_A',__key:r.key,...(r.rowA||{})}))), sheetBase+'_onlyA');
-    const onlyB = pair.results.filter(r => r.status === 'only_in_B');
-    if (onlyB.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(onlyB.map(r=>({__status:'only_in_B',__key:r.key,...(r.rowB||{})}))), sheetBase+'_onlyB');
-
-    // Date summary per pair
-    const dateSummary = {};
-    pair.results.forEach(r => {
-      const d = getDateForRow(r)||'(no date)';
-      if (!dateSummary[d]) dateSummary[d]={date:d,total:0,match:0,mismatch:0,only_in_A:0,only_in_B:0};
-      dateSummary[d].total++;
-      dateSummary[d][r.status]=(dateSummary[d][r.status]||0)+1;
-    });
-    const summaryRows = Object.values(dateSummary).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-    summaryRows.forEach(r => { r.issue_rate = r.total ? ((r.mismatch+r.only_in_A+r.only_in_B)/r.total*100).toFixed(1)+'%' : '0%'; });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), sheetBase+'_summary');
-  });
-
-  const today = new Date().toISOString().slice(0,10);
-  const shop  = (document.getElementById('shopName').value.trim()||'Unknown Shop').replace(/[/\\?%*:|"<>]/g,'-');
-  const dp    = (document.getElementById('dataPoint').value.trim()||'Unknown Data').replace(/[/\\?%*:|"<>]/g,'-');
-  XLSX.writeFile(wb, `${today} - ${shop} - ${dp} - reconciliation (Snowflake vs Seller Center).xlsx`);
+  if (!currentJobId) { alert('No results to export. Run reconciliation first.'); return; }
+  const shop = encodeURIComponent(document.getElementById('shopName').value.trim());
+  const dp   = encodeURIComponent(document.getElementById('dataPoint').value.trim());
+  window.location.href = `/api/job/${currentJobId}/download?shopName=${shop}&dataPoint=${dp}`;
 }
 </script>
 </body>

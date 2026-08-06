@@ -1,0 +1,1497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reconciliation Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue: #4F6EF7;
+    --blue-dark: #3A56E0;
+    --blue-light: #EEF1FF;
+    --green: #16A34A;
+    --green-light: #DCFCE7;
+    --red: #DC2626;
+    --red-light: #FEE2E2;
+    --amber: #D97706;
+    --amber-light: #FEF3C7;
+    --purple: #7C3AED;
+    --surface: #F8F9FC;
+    --card: #FFFFFF;
+    --border: #E5E7EB;
+    --border-focus: #4F6EF7;
+    --text-primary: #111827;
+    --text-secondary: #6B7280;
+    --text-muted: #9CA3AF;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+    --shadow-md: 0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+
+  body { font-family: 'Inter', system-ui, sans-serif; font-size: 14px; background: var(--surface); color: var(--text-primary); min-height: 100vh; }
+
+  /* ── Header ── */
+  .app-header {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #3730a3 100%);
+    padding: 20px 32px; display: flex; align-items: center; gap: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  }
+  .app-header .logo { width: 38px; height: 38px; background: rgba(255,255,255,.15); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .app-header h1 { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: -.01em; }
+  .app-header p  { font-size: 12px; color: rgba(255,255,255,.55); margin-top: 1px; }
+  .header-badge  { margin-left: auto; font-size: 11px; font-weight: 600; background: rgba(255,255,255,.12); color: rgba(255,255,255,.8); border: 1px solid rgba(255,255,255,.15); border-radius: 20px; padding: 4px 12px; letter-spacing: .02em; }
+
+  /* ── Layout ── */
+  .content { padding: 28px 32px; max-width: 1200px; margin: 0 auto; }
+
+  /* ── Steps ── */
+  .steps { display: flex; align-items: center; gap: 6px; margin-bottom: 20px; }
+  .step  { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); font-weight: 500; }
+  .step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--border); color: var(--text-muted); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .step.active .step-num { background: var(--blue); color: #fff; }
+  .step.active { color: var(--blue); }
+  .step-sep { color: var(--border); font-size: 16px; }
+
+  /* ── Upload area ── */
+  .upload-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .upload-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; }
+  .upload-card-header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .source-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-a { background: var(--blue); }
+  .dot-b { background: var(--purple); }
+  .upload-card-header span { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .06em; }
+  .upload-card-body { padding: 14px 16px; }
+
+  .drop-zone {
+    border: 2px dashed #D1D5DB; border-radius: var(--radius-sm);
+    padding: 20px 16px; text-align: center; cursor: pointer;
+    position: relative; transition: border-color .2s, background .2s;
+    background: #FAFAFA;
+  }
+  .drop-zone:hover, .drop-zone.drag-over { background: var(--blue-light); border-color: var(--blue); }
+  .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .drop-zone .dz-icon { font-size: 26px; margin-bottom: 6px; }
+  .drop-zone p { font-size: 12px; color: var(--text-muted); }
+  .drop-zone .dz-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  /* ── File pills list ── */
+  .file-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .file-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--blue-light); border: 1px solid #C7D2FE;
+    border-radius: 8px; padding: 6px 10px; font-size: 12px;
+  }
+  .file-pill .pill-name { flex: 1; font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-pill .pill-rows { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+  .file-pill .pill-rm { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 14px; padding: 0 2px; line-height: 1; transition: color .15s; }
+  .file-pill .pill-rm:hover { color: var(--red); }
+
+  /* ── Pairing table ── */
+  .pair-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); margin-bottom: 20px; overflow: hidden; }
+  .pair-card-header { display: flex; align-items: center; gap: 8px; padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .pair-card-header span { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .pair-card-header small { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+  .pair-card-body { padding: 16px 20px; }
+
+  .pair-header { display: grid; grid-template-columns: 1fr 30px 1fr 28px; gap: 10px; margin-bottom: 6px; }
+  .pair-row    { display: grid; grid-template-columns: 1fr 30px 1fr 28px; gap: 10px; align-items: center; margin-bottom: 8px; }
+  .pair-sel {
+    font-size: 12px; padding: 7px 10px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: #fff; color: var(--text-primary); outline: none; width: 100%;
+    transition: border-color .15s;
+  }
+  .pair-sel:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(79,110,247,.1); }
+  .pair-arrow { text-align: center; color: var(--text-muted); font-size: 14px; }
+  .pair-rm { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 16px; padding: 4px 6px; border-radius: 6px; transition: all .15s; }
+  .pair-rm:hover { color: var(--red); background: var(--red-light); }
+  .add-pair-btn { margin-top: 6px; font-size: 12px; color: var(--blue); cursor: pointer; background: var(--blue-light); border: 1px dashed var(--blue); border-radius: var(--radius-sm); padding: 6px 14px; font-weight: 500; transition: all .15s; }
+  .add-pair-btn:hover { background: #dde3ff; }
+
+  /* ── Column Mapping ── */
+  .mapping-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); margin-bottom: 20px; overflow: hidden; }
+  .mapping-card-header { padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+  .mapping-card-header span { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .mapping-card-header small { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+  .mapping-card-body { padding: 16px 20px; }
+
+  .col-label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+  .map-row select { font-size: 12px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: #fff; color: var(--text-primary); transition: border-color .15s; outline: none; }
+  .map-row select:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(79,110,247,.1); }
+  .arrow { text-align: center; color: var(--text-muted); font-size: 14px; }
+  .norm-wrap { display: flex; flex-wrap: wrap; gap: 4px; }
+  .npill { font-size: 11px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; cursor: pointer; user-select: none; white-space: nowrap; color: var(--text-secondary); font-weight: 500; transition: all .15s; }
+  .npill:hover { border-color: var(--blue); color: var(--blue); }
+  .npill.on { background: var(--blue-light); border-color: var(--blue); color: var(--blue); font-weight: 600; }
+  .rm-btn { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 16px; line-height: 1; padding: 4px 6px; border-radius: 6px; transition: all .15s; }
+  .rm-btn:hover { color: var(--red); background: var(--red-light); }
+  .add-btn { margin-top: 10px; font-size: 12px; color: var(--blue); cursor: pointer; background: var(--blue-light); border: 1px dashed var(--blue); border-radius: var(--radius-sm); padding: 6px 14px; font-weight: 500; transition: all .15s; }
+  .add-btn:hover { background: #dde3ff; }
+  .key-badge { font-size: 10px; font-weight: 700; background: #FFF7ED; border: 1px solid #FED7AA; color: #C2410C; border-radius: 20px; padding: 2px 8px; white-space: nowrap; text-align: center; cursor: pointer; user-select: none; transition: all .15s; }
+  .key-badge:hover { background: #FFEDD5; border-color: #FB923C; }
+  .compare-badge { font-size: 10px; font-weight: 600; background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); border-radius: 20px; padding: 2px 8px; white-space: nowrap; text-align: center; cursor: pointer; user-select: none; transition: all .15s; }
+  .compare-badge:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-light); }
+  .map-row { display: grid; grid-template-columns: 72px 1fr 28px 1fr 1fr 32px; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .map-header { display: grid; grid-template-columns: 72px 1fr 28px 1fr 1fr 32px; gap: 8px; margin-bottom: 6px; }
+
+  .date-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .date-col label { font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 5px; font-weight: 500; }
+  .date-col select { font-size: 12px; width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fff; color: var(--text-primary); outline: none; transition: border-color .15s; }
+  .date-col select:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(79,110,247,.1); }
+
+  /* ── Run Button ── */
+  .run-btn { width: 100%; padding: 14px; font-size: 14px; font-weight: 700; background: linear-gradient(135deg, #4F6EF7 0%, #7C3AED 100%); color: #fff; border: none; border-radius: var(--radius); cursor: pointer; margin-bottom: 24px; box-shadow: 0 4px 14px rgba(79,110,247,.35); display: flex; align-items: center; justify-content: center; gap: 8px; letter-spacing: .01em; transition: transform .15s, box-shadow .15s; }
+  .run-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(79,110,247,.45); }
+  .run-btn:active { transform: translateY(0); }
+
+  /* ── Stats ── */
+  .stats-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 16px; position: relative; overflow: hidden; transition: box-shadow .2s, transform .2s; }
+  .stat:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+  .stat::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+  .stat-total::before { background: var(--blue); }
+  .stat-match::before { background: var(--green); }
+  .stat-mm::before    { background: var(--red); }
+  .stat-warnA::before, .stat-warnB::before { background: var(--amber); }
+  .stat-lbl { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+  .stat-val { font-size: 26px; font-weight: 700; line-height: 1; }
+  .sv-blue  { color: var(--blue); }
+  .sv-green { color: var(--green); }
+  .sv-red   { color: var(--red); }
+  .sv-warn  { color: var(--amber); }
+
+  /* ── Toolbar ── */
+  .toolbar { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 14px 18px; display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .toolbar-field { display: flex; flex-direction: column; gap: 4px; }
+  .toolbar-field label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  .toolbar-field input { font-size: 13px; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); width: 180px; outline: none; background: var(--surface); transition: border-color .15s; font-family: inherit; }
+  .toolbar-field input:focus { border-color: var(--border-focus); background: #fff; box-shadow: 0 0 0 3px rgba(79,110,247,.1); }
+  .dl-btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 18px; font-size: 13px; font-weight: 600; background: var(--green); color: #fff; border: none; border-radius: var(--radius-sm); cursor: pointer; box-shadow: 0 2px 8px rgba(22,163,74,.25); transition: all .15s; font-family: inherit; margin-left: auto; }
+  .dl-btn:hover { background: #15803D; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(22,163,74,.35); }
+
+  /* ── Pair Result Tabs ── */
+  .tabs-wrapper { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; }
+  .tabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 4px; background: var(--surface); gap: 2px; overflow-x: auto; }
+  .tab { font-size: 13px; padding: 11px 18px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--text-secondary); font-weight: 500; border-radius: 8px 8px 0 0; transition: color .15s, background .15s; white-space: nowrap; }
+  .tab:hover { color: var(--text-primary); background: rgba(0,0,0,.03); }
+  .tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; background: #fff; }
+  .tabs-body { padding: 16px; }
+
+  /* ── Table ── */
+  .tbl-wrap { overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { font-size: 11px; font-weight: 600; color: var(--text-secondary); text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); background: var(--surface); white-space: nowrap; letter-spacing: .03em; text-transform: uppercase; }
+  td { padding: 8px 12px; border-bottom: 1px solid #F3F4F6; white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #FAFBFF; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
+  .badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .b-match { background: var(--green-light); color: var(--green); }
+  .b-match::before { background: var(--green); }
+  .b-mm { background: var(--red-light); color: var(--red); }
+  .b-mm::before { background: var(--red); }
+  .b-miss { background: var(--amber-light); color: var(--amber); }
+  .b-miss::before { background: var(--amber); }
+
+  /* ── Insights ── */
+  .insight-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .insight-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 16px; }
+  .insight-card h3 { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 14px; text-transform: uppercase; letter-spacing: .06em; }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .bar-label { min-width: 110px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-secondary); }
+  .bar-track { flex: 1; height: 6px; background: #F3F4F6; border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; }
+  .bar-count { font-size: 12px; color: var(--text-secondary); min-width: 28px; text-align: right; font-weight: 600; }
+  .action-box { background: linear-gradient(135deg, #FFFBEB, #FEF3C7); border: 1px solid #FDE68A; border-radius: var(--radius); padding: 16px 20px; font-size: 13px; color: #78350F; margin-top: 16px; box-shadow: var(--shadow-sm); }
+  .action-box strong { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 14px; }
+  .action-box p { margin-bottom: 6px; line-height: 1.5; }
+
+  /* ── Platform Selector ── */
+  .platform-bar {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 20px;
+    margin-bottom: 20px; box-shadow: var(--shadow-sm);
+  }
+  .platform-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .06em; margin-right: 4px; }
+  .plat-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 20px; font-size: 13px; font-weight: 600;
+    border: 2px solid var(--border); border-radius: 20px;
+    background: var(--surface); color: var(--text-secondary);
+    cursor: pointer; transition: all .15s; font-family: inherit;
+  }
+  .plat-btn:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-light); }
+  .plat-btn.active.lazada  { border-color: #F97316; color: #C2410C; background: #FFF7ED; }
+  .plat-btn.active.shopee  { border-color: #EF4444; color: #DC2626; background: #FEF2F2; }
+  .plat-btn.active.tiktok  { border-color: #111827; color: #111827; background: #F3F4F6; }
+  .plat-info { margin-left: auto; font-size: 11px; color: var(--text-muted); font-style: italic; }
+
+  /* ── File pill extras ── */
+  .file-pill-wrap { display: flex; flex-direction: column; }
+
+  /* Sheet picker */
+  .sheet-picker-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 5px; padding: 6px 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; font-size: 12px;
+  }
+  .sheet-picker-row label { color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
+  .sheet-picker-row select {
+    font-size: 12px; padding: 4px 8px; border: 1px solid var(--border);
+    border-radius: 6px; background: #fff; color: var(--text-primary);
+    outline: none; flex: 1;
+  }
+
+  /* Mode toggle */
+  .mode-toggle { display: flex; gap: 4px; margin-top: 6px; }
+  .mode-btn {
+    font-size: 11px; font-weight: 600; padding: 4px 12px;
+    border: 1px solid var(--border); border-radius: 20px;
+    background: var(--surface); color: var(--text-muted);
+    cursor: pointer; font-family: inherit; transition: all .15s;
+  }
+  .mode-btn:hover { border-color: var(--blue); color: var(--blue); }
+  .mode-btn.active { background: var(--blue-light); border-color: var(--blue); color: var(--blue); }
+
+  /* Group config */
+  .group-config {
+    margin-top: 6px; padding: 8px 10px;
+    background: var(--blue-light); border: 1px solid #C7D2FE;
+    border-radius: 8px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .group-config-row { display: flex; align-items: center; gap: 8px; }
+  .group-config-row label { font-size: 11px; font-weight: 600; color: var(--blue); min-width: 55px; }
+  .group-config-row select {
+    font-size: 12px; padding: 4px 8px; border: 1px solid #C7D2FE;
+    border-radius: 6px; background: #fff; color: var(--text-primary);
+    outline: none; flex: 1;
+  }
+  .grouped-badge {
+    font-size: 10px; font-weight: 700; background: var(--blue-light); border: 1px solid #C7D2FE;
+    color: var(--blue); border-radius: 20px; padding: 2px 8px; white-space: nowrap; align-self: flex-start;
+  }
+
+  .hidden { display: none !important; }
+  .note { font-size: 11px; color: var(--text-muted); padding: 10px 14px; text-align: center; }
+
+  /* ── Result header (per pair) ── */
+  .pair-result-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; margin-bottom: 14px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); font-size: 12px; color: var(--text-secondary);
+  }
+  .pair-result-header strong { color: var(--text-primary); font-size: 13px; }
+  .pair-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; margin-left: 4px; }
+  .pb-match { background: var(--green-light); color: var(--green); }
+  .pb-mm    { background: var(--red-light);   color: var(--red); }
+  .pb-miss  { background: var(--amber-light);  color: var(--amber); }
+
+  /* inner tab row/insights toggle */
+  .inner-tabs { display: flex; gap: 2px; margin-bottom: 12px; }
+  .inner-tab { font-size: 12px; padding: 6px 14px; cursor: pointer; border: 1px solid var(--border); border-radius: 20px; color: var(--text-secondary); font-weight: 500; transition: all .15s; background: var(--surface); }
+  .inner-tab.active { background: var(--blue-light); border-color: var(--blue); color: var(--blue); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="logo">⚖️</div>
+  <div>
+    <h1>Reconciliation Tool</h1>
+    <p>Seller Center vs Snowflake — Batch Mode</p>
+  </div>
+  <div class="header-badge">Data Engineering</div>
+</header>
+
+<div class="content">
+
+  <!-- Platform Selector -->
+  <div class="platform-bar">
+    <span class="platform-label">Platform</span>
+    <button class="plat-btn lazada active" onclick="selectPlatform('lazada', this)">🛒 Lazada</button>
+    <button class="plat-btn shopee" onclick="selectPlatform('shopee', this)">🟠 Shopee</button>
+    <button class="plat-btn tiktok" onclick="selectPlatform('tiktok', this)">🎵 TikTok</button>
+    <span class="plat-info" id="platInfo">Lazada: fee rows are auto-pivoted into columns per order item</span>
+  </div>
+
+  <!-- Steps -->
+  <div class="steps">
+    <div class="step active"><div class="step-num">1</div> Upload Files</div>
+    <div class="step-sep">›</div>
+    <div class="step active"><div class="step-num">2</div> Pair Files</div>
+    <div class="step-sep">›</div>
+    <div class="step"><div class="step-num">3</div> Map Columns</div>
+    <div class="step-sep">›</div>
+    <div class="step"><div class="step-num">4</div> Run All &amp; Review</div>
+  </div>
+
+  <!-- Upload row -->
+  <div class="upload-row">
+    <!-- File A pool -->
+    <div class="upload-card">
+      <div class="upload-card-header">
+        <div class="source-dot dot-a"></div>
+        <span id="labelA">Lazada Files (A)</span>
+      </div>
+      <div class="upload-card-body">
+        <div class="drop-zone" id="dzA">
+          <input type="file" accept=".xlsx,.xls,.csv" multiple onchange="loadFiles('A', this)">
+          <div class="dz-icon">📂</div>
+          <p>Click or drag to upload one or more Excel / CSV files</p>
+          <div class="dz-hint">Multiple files allowed</div>
+        </div>
+        <div class="file-list" id="listA"></div>
+      </div>
+    </div>
+
+    <!-- File B pool -->
+    <div class="upload-card">
+      <div class="upload-card-header">
+        <div class="source-dot dot-b"></div>
+        <span>Snowflake Extract Files (B)</span>
+      </div>
+      <div class="upload-card-body">
+        <div class="drop-zone" id="dzB">
+          <input type="file" accept=".xlsx,.xls,.csv" multiple onchange="loadFiles('B', this)">
+          <div class="dz-icon">📂</div>
+          <p>Click or drag to upload one or more Excel / CSV files</p>
+          <div class="dz-hint">Multiple files allowed</div>
+        </div>
+        <div class="file-list" id="listB"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pairing -->
+  <div class="pair-card hidden" id="pairSection">
+    <div class="pair-card-header">
+      <span>🔀 File Pairs</span>
+      <small>Each row = one comparison run</small>
+    </div>
+    <div class="pair-card-body">
+      <div class="pair-header">
+        <div class="col-label">Seller Center file (A)</div>
+        <div></div>
+        <div class="col-label">Snowflake file (B)</div>
+        <div></div>
+      </div>
+      <div id="pairRows"></div>
+      <button class="add-pair-btn" onclick="addPairRow()">+ Add pair</button>
+    </div>
+  </div>
+
+  <!-- Column Mapping -->
+  <div class="mapping-card hidden" id="mappingSection">
+    <div class="mapping-card-header">
+      <span>🔗 Column Mappings</span>
+      <small>Applied to all pairs · Click role badge to toggle Join Key / Compare</small>
+    </div>
+    <div class="mapping-card-body">
+      <div id="mappingMemoryBanner" class="hidden" style="display:flex;align-items:center;gap:10px;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#3730A3">
+        <span id="mappingMemoryText" style="flex:1"></span>
+        <a href="#" onclick="forgetSavedMapping();return false;" style="color:#4338CA;font-weight:600;text-decoration:none;white-space:nowrap">Forget & re-detect</a>
+      </div>
+      <div class="map-header">
+        <div class="col-label">Role</div>
+        <div class="col-label">File A column</div>
+        <div></div>
+        <div class="col-label">File B column</div>
+        <div class="col-label">Normalization rules</div>
+        <div></div>
+      </div>
+      <div id="mapRows"></div>
+      <button class="add-btn" onclick="addMapRow()">+ Add column pair</button>
+      <div class="date-row">
+        <div class="date-col">
+          <label>📅 Date field — File A</label>
+          <select id="dateColA"><option value="">(none)</option></select>
+        </div>
+        <div class="date-col">
+          <label>📅 Date field — File B</label>
+          <select id="dateColB"><option value="">(none)</option></select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Run -->
+  <button class="run-btn hidden" id="runBtn" onclick="runAll()">▶ Run All Pairs</button>
+
+  <!-- Results -->
+  <div id="resultsSection" class="hidden">
+    <!-- Aggregate stats -->
+    <div class="stats-row">
+      <div class="stat stat-total"><div class="stat-lbl">Total Rows</div><div class="stat-val sv-blue"  id="sTotal">0</div></div>
+      <div class="stat stat-match"><div class="stat-lbl">Matched</div><div class="stat-val sv-green" id="sMatch">0</div></div>
+      <div class="stat stat-mm">  <div class="stat-lbl">Mismatched</div><div class="stat-val sv-red"   id="sMm">0</div></div>
+      <div class="stat stat-warnA"><div class="stat-lbl">Only in A</div><div class="stat-val sv-warn"  id="sOnlyA">0</div></div>
+      <div class="stat stat-warnB"><div class="stat-lbl">Only in B</div><div class="stat-val sv-warn"  id="sOnlyB">0</div></div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="toolbar-field">
+        <label>Shop Name</label>
+        <input id="shopName" type="text" placeholder="e.g. P&G Beauty">
+      </div>
+      <div class="toolbar-field">
+        <label>Data Point</label>
+        <input id="dataPoint" type="text" placeholder="e.g. Shopee Wallet">
+      </div>
+      <button class="dl-btn" onclick="exportExcel()">⬇ Download All Results Excel</button>
+    </div>
+
+    <!-- Per-pair tabs -->
+    <div class="tabs-wrapper">
+      <div class="tabs" id="pairTabs"></div>
+      <div class="tabs-body" id="pairTabBodies"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── State ──
+const poolA = {}; // filename → {wb, rows, headers}
+const poolB = {};
+let allPairResults = []; // [{label, results}]
+
+// Note: 0/blank/N/A-are-equal used to be an opt-in pill per column. It's now applied
+// automatically to every field (see norm() below), so it's no longer listed here as
+// a checkbox you have to remember to tick.
+const NORMS = [
+  {id:'order_id',   label:'Order ID cleanup'},
+  {id:'round2',     label:'Round 2 dec'},
+  {id:'round0',     label:'Round 0 dec'},
+  {id:'lowercase',  label:'Lowercase+strip _'},
+  {id:'date_only',  label:'Date only (ignore time)'},
+  {id:'cancel_word', label:'Cancel = Cancelled'},
+];
+
+// ── Platform ──
+let selectedPlatform = 'lazada';
+const PLAT_LABELS = { lazada: 'Lazada', shopee: 'Shopee', tiktok: 'TikTok Shop' };
+
+function selectPlatform(p, btn) {
+  selectedPlatform = p;
+  document.querySelectorAll('.plat-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('platInfo').textContent = (PLAT_LABELS[p] || p) + ' selected';
+  const labelA = document.getElementById('labelA');
+  if (labelA) labelA.textContent = (PLAT_LABELS[p] || p) + ' Files (A)';
+  // Clear all file state when platform changes
+  [poolA, poolB].forEach(pool => Object.keys(pool).forEach(k => delete pool[k]));
+  Object.keys(fileConfig).forEach(k => delete fileConfig[k]);
+  Object.keys(sheetChoice).forEach(k => delete sheetChoice[k]);
+  resetXlsxWorker(); // drop any cached/in-flight parses from the previous platform
+  document.getElementById('mapRows').innerHTML = '';
+  document.getElementById('mappingMemoryBanner').classList.add('hidden');
+  renderFileList('A');
+  renderFileList('B');
+  maybeShowPairing();
+}
+
+// ── Per-file config ──
+const fileConfig = {}; // fname → { mode: 'asis'|'grouped', groupCol: '', sumCol: '' }
+const sheetChoice = {}; // fname → sheetName
+
+function getFileConfig(fname) {
+  if (!fileConfig[fname]) fileConfig[fname] = { mode: 'asis', groupCol: '', sumCol: '' };
+  return fileConfig[fname];
+}
+
+// Generic grouping: one row per unique groupCol value, sumCol aggregated
+function applyGrouping(rawRows, groupCol, sumCol) {
+  const groups = new Map();
+  rawRows.forEach(row => {
+    const key = String(row[groupCol] ?? '').trim();
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, { [groupCol]: key, [sumCol]: 0 });
+    const amt = parseFloat(row[sumCol] ?? 0);
+    if (!isNaN(amt)) {
+      const cur = groups.get(key)[sumCol];
+      groups.get(key)[sumCol] = Math.round((cur + amt) * 100) / 100;
+    }
+  });
+  return Array.from(groups.values());
+}
+
+function applyFileConfig(fname, pool) {
+  const f = pool[fname];
+  if (!f) return;
+  const cfg = getFileConfig(fname);
+  if (cfg.mode === 'grouped' && cfg.groupCol && cfg.sumCol) {
+    f.rows = applyGrouping(f.rawRows, cfg.groupCol, cfg.sumCol);
+    f.headers = [cfg.groupCol, cfg.sumCol];
+  } else {
+    f.rows = f.rawRows;
+    f.headers = f.rawHeaders;
+  }
+}
+
+function changeSheet(fname, sheetName, side) {
+  sheetChoice[fname] = sheetName;
+  const pool = side === 'A' ? poolA : poolB;
+  const f = pool[fname];
+  if (!f || !f.workerId) return;
+  // Reset group cols when sheet changes
+  const cfg = getFileConfig(fname);
+  cfg.groupCol = ''; cfg.sumCol = '';
+  f.status = 'parsing';
+  renderFileList(side);
+  pendingParses[f.workerId] = { side, fname };
+  getXlsxWorker().postMessage({ type: 'changeSheet', id: f.workerId, sheetName });
+}
+
+function setFileMode(fname, side, mode) {
+  const pool = side === 'A' ? poolA : poolB;
+  getFileConfig(fname).mode = mode;
+  applyFileConfig(fname, pool);
+  renderFileList(side);
+  onPairChange();
+}
+
+function setGroupCol(fname, side, col) {
+  const pool = side === 'A' ? poolA : poolB;
+  getFileConfig(fname).groupCol = col;
+  applyFileConfig(fname, pool);
+  renderFileList(side);
+  onPairChange();
+}
+
+function setSumCol(fname, side, col) {
+  const pool = side === 'A' ? poolA : poolB;
+  getFileConfig(fname).sumCol = col;
+  applyFileConfig(fname, pool);
+  renderFileList(side);
+  onPairChange();
+}
+
+// ── File loading ──
+// cellDates:true makes SheetJS convert date/time-formatted cells into real JS Date
+// objects instead of raw Excel serial numbers (e.g. 46204.627...). We then stringify
+// those Date objects into a plain "YYYY-MM-DD HH:mm:ss" string so every downstream
+// step (table display, matching, export) sees readable text instead of a decimal.
+// Plain numeric cells (prices, quantities) are untouched, so existing round2/round0
+// normalization rules keep working as before.
+function pad2(n) { return String(n).padStart(2, '0'); }
+function formatDateTime(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+function stringifyDates(rows) {
+  return rows.map(row => {
+    const out = {};
+    for (const k in row) {
+      const v = row[k];
+      out[k] = (v instanceof Date && !isNaN(v)) ? formatDateTime(v) : v;
+    }
+    return out;
+  });
+}
+
+// ── XLSX parsing Worker ──
+// Large exports (200k+ rows, 50+ columns) can take a long time for SheetJS to parse.
+// Doing that on the main thread freezes the tab — the browser can kill an
+// unresponsive script mid-parse, which is why big files used to silently show "0 rows"
+// with no error. Parsing now happens in a Web Worker instead: the UI stays responsive,
+// shows a "Parsing…" state, and reports a real error if something goes wrong.
+// dense:true / cellStyles:false / cellHTML:false / cellFormula:false are SheetJS
+// performance flags that skip work we don't need, which noticeably speeds up parsing
+// of large sheets.
+const XLSX_WORKER_SRC = `
+importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+const workbooks = {};
+self.onmessage = function(e) {
+  const msg = e.data;
+  try {
+    if (msg.type === 'parse') {
+      const wb = XLSX.read(msg.buffer, { type: 'array', cellDates: true, dense: true, cellStyles: false, cellHTML: false, cellFormula: false });
+      workbooks[msg.id] = wb;
+      const sheetName = msg.sheetName || wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      self.postMessage({ type: 'parsed', id: msg.id, sheetNames: wb.SheetNames, sheetName, rawRows });
+    } else if (msg.type === 'changeSheet') {
+      const wb = workbooks[msg.id];
+      if (!wb) throw new Error('Original file is no longer cached — please re-upload it.');
+      const ws = wb.Sheets[msg.sheetName];
+      const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      self.postMessage({ type: 'parsed', id: msg.id, sheetNames: wb.SheetNames, sheetName: msg.sheetName, rawRows });
+    } else if (msg.type === 'remove') {
+      delete workbooks[msg.id];
+    }
+  } catch (err) {
+    self.postMessage({ type: 'error', id: msg.id, message: (err && err.message) ? err.message : String(err) });
+  }
+};
+`;
+
+let xlsxWorker = null;
+const pendingParses = {}; // id → {side, fname}
+let fileParseSeq = 0;
+
+function getXlsxWorker() {
+  if (!xlsxWorker) {
+    const blob = new Blob([XLSX_WORKER_SRC], { type: 'application/javascript' });
+    xlsxWorker = new Worker(URL.createObjectURL(blob));
+    xlsxWorker.onmessage = handleWorkerMessage;
+  }
+  return xlsxWorker;
+}
+
+function resetXlsxWorker() {
+  if (xlsxWorker) { xlsxWorker.terminate(); xlsxWorker = null; }
+  Object.keys(pendingParses).forEach(k => delete pendingParses[k]);
+}
+
+function handleWorkerMessage(e) {
+  const msg = e.data;
+  const pending = pendingParses[msg.id];
+  if (!pending) return;
+  delete pendingParses[msg.id];
+  const { side, fname } = pending;
+  const pool = side === 'A' ? poolA : poolB;
+  const f = pool[fname];
+  if (!f) return;
+
+  if (msg.type === 'error') {
+    f.status = 'error';
+    f.error = msg.message;
+    renderFileList(side);
+    return;
+  }
+
+  if (!sheetChoice[fname]) sheetChoice[fname] = msg.sheetName;
+  const rawRows = stringifyDates(msg.rawRows);
+  f.rawRows = rawRows;
+  f.rawHeaders = rawRows.length ? Object.keys(rawRows[0]) : [];
+  f.sheetNames = msg.sheetNames;
+  f.status = 'ready';
+  applyFileConfig(fname, pool);
+  renderFileList(side);
+  refreshPairSelects();
+  maybeShowPairing();
+  onPairChange();
+}
+
+function loadFiles(side, input) {
+  const pool = side === 'A' ? poolA : poolB;
+  Array.from(input.files).forEach(f => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const id = 'f' + (++fileParseSeq) + '_' + Date.now();
+      pool[f.name] = {
+        wb: null, workerId: id, status: 'parsing', error: null,
+        rawRows: [], rawHeaders: [], rows: [], headers: [],
+        name: f.name, sheetNames: []
+      };
+      pendingParses[id] = { side, fname: f.name };
+      renderFileList(side);
+      maybeShowPairing();
+      const buffer = e.target.result;
+      getXlsxWorker().postMessage({ type: 'parse', id, buffer }, [buffer]);
+    };
+    reader.readAsArrayBuffer(f);
+  });
+}
+
+function removeFile(side, fname) {
+  const pool = side === 'A' ? poolA : poolB;
+  const f = pool[fname];
+  if (f && f.workerId && xlsxWorker) xlsxWorker.postMessage({ type: 'remove', id: f.workerId });
+  if (f && f.workerId) delete pendingParses[f.workerId];
+  delete pool[fname];
+  delete fileConfig[fname];
+  delete sheetChoice[fname];
+  renderFileList(side);
+  refreshPairSelects();
+  maybeShowPairing();
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderFileList(side) {
+  const pool = side === 'A' ? poolA : poolB;
+  const el = document.getElementById('list' + side);
+  el.innerHTML = Object.values(pool).map(f => {
+    const safeName = f.name.replace(/'/g, "\\'");
+
+    if (f.status === 'parsing') {
+      return `<div class="file-pill-wrap">
+        <div class="file-pill">
+          <span class="pill-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+          <span class="pill-rows" style="color:#D97706">⏳ Parsing… (large files can take a minute or two)</span>
+          <button class="pill-rm" onclick="removeFile('${side}','${safeName}')">×</button>
+        </div>
+      </div>`;
+    }
+    if (f.status === 'error') {
+      return `<div class="file-pill-wrap">
+        <div class="file-pill">
+          <span class="pill-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+          <span class="pill-rows" style="color:#DC2626">⚠ Parse failed</span>
+          <button class="pill-rm" onclick="removeFile('${side}','${safeName}')">×</button>
+        </div>
+        <div style="font-size:11px;color:#DC2626;padding:4px 8px 8px">${escapeHtml(f.error)}</div>
+      </div>`;
+    }
+
+    const cfg = getFileConfig(f.name);
+
+    // Sheet picker (multi-sheet files only)
+    let sheetHtml = '';
+    if (f.sheetNames && f.sheetNames.length > 1) {
+      const cur = sheetChoice[f.name] || f.sheetNames[0];
+      sheetHtml = `<div class="sheet-picker-row">
+        <label>📋 Sheet</label>
+        <select onchange="changeSheet('${safeName}',this.value,'${side}')">
+          ${f.sheetNames.map(s => `<option value="${s}"${s===cur?' selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>`;
+    }
+
+    // Mode toggle
+    const modeHtml = `<div class="mode-toggle">
+      <button class="mode-btn${cfg.mode==='asis'?' active':''}"    onclick="setFileMode('${safeName}','${side}','asis')">As Is</button>
+      <button class="mode-btn${cfg.mode==='grouped'?' active':''}" onclick="setFileMode('${safeName}','${side}','grouped')">Group By</button>
+    </div>`;
+
+    // Group config panel (only when mode = grouped)
+    let groupHtml = '';
+    if (cfg.mode === 'grouped') {
+      const cols = f.rawHeaders || [];
+      const ready = cfg.groupCol && cfg.sumCol;
+      groupHtml = `<div class="group-config">
+        <div class="group-config-row">
+          <label>Group by</label>
+          <select onchange="setGroupCol('${safeName}','${side}',this.value)">
+            <option value="">(select column)</option>
+            ${cols.map(c => `<option value="${c}"${c===cfg.groupCol?' selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="group-config-row">
+          <label>Sum</label>
+          <select onchange="setSumCol('${safeName}','${side}',this.value)">
+            <option value="">(select column)</option>
+            ${cols.map(c => `<option value="${c}"${c===cfg.sumCol?' selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        ${ready
+          ? `<span class="grouped-badge">✓ ${f.rows.length.toLocaleString()} groups</span>`
+          : `<span style="font-size:11px;color:var(--text-muted)">Select both columns above to apply</span>`}
+      </div>`;
+    }
+
+    return `<div class="file-pill-wrap">
+      <div class="file-pill">
+        <span class="pill-name" title="${f.name}">${f.name}</span>
+        <span class="pill-rows">${f.rows.length.toLocaleString()} rows</span>
+        <button class="pill-rm" onclick="removeFile('${side}','${safeName}')">×</button>
+      </div>
+      ${sheetHtml}${modeHtml}${groupHtml}
+    </div>`;
+  }).join('');
+}
+
+function maybeShowPairing() {
+  const hasA = Object.keys(poolA).length > 0;
+  const hasB = Object.keys(poolB).length > 0;
+  const pairSection = document.getElementById('pairSection');
+  if (hasA && hasB) {
+    pairSection.classList.remove('hidden');
+    if (document.querySelectorAll('#pairRows .pair-row').length === 0) {
+      autoPopulatePairs();
+    } else {
+      refreshPairSelects();
+    }
+  } else {
+    pairSection.classList.add('hidden');
+    document.getElementById('mappingSection').classList.add('hidden');
+    document.getElementById('runBtn').classList.add('hidden');
+  }
+}
+
+// ── Pairing ──
+function fileOptions(pool, selectedName) {
+  // Only files that finished parsing can be picked for a comparison pair.
+  return Object.keys(pool).filter(n => pool[n].status === 'ready').map(n =>
+    `<option value="${n}" ${n === selectedName ? 'selected' : ''}>${n}</option>`
+  ).join('');
+}
+
+function addPairRow(nameA='', nameB='') {
+  const id = 'p' + Date.now() + Math.random().toString(36).slice(2);
+  const div = document.createElement('div');
+  div.className = 'pair-row'; div.id = id;
+  div.innerHTML = `
+    <select class="pair-sel" onchange="onPairChange()">${fileOptions(poolA, nameA)}</select>
+    <div class="pair-arrow">→</div>
+    <select class="pair-sel" onchange="onPairChange()">${fileOptions(poolB, nameB)}</select>
+    <button class="pair-rm" onclick="document.getElementById('${id}').remove();onPairChange()" title="Remove">×</button>`;
+  document.getElementById('pairRows').appendChild(div);
+  onPairChange();
+}
+
+function autoPopulatePairs() {
+  document.getElementById('pairRows').innerHTML = '';
+  const aNames = Object.keys(poolA).filter(n => poolA[n].status === 'ready');
+  const bNames = Object.keys(poolB).filter(n => poolB[n].status === 'ready');
+  // Try to auto-match by name similarity, else just pair by index
+  aNames.forEach((a, i) => {
+    const matched = bNames.find(b => similarity(a, b) > 0.4) || bNames[i] || bNames[0];
+    if (matched) addPairRow(a, matched);
+  });
+  onPairChange();
+}
+
+function similarity(a, b) {
+  a = a.toLowerCase().replace(/[^a-z0-9]/g,'');
+  b = b.toLowerCase().replace(/[^a-z0-9]/g,'');
+  let common = 0;
+  for (const ch of a) if (b.includes(ch)) common++;
+  return common / Math.max(a.length, b.length, 1);
+}
+
+function refreshPairSelects() {
+  document.querySelectorAll('#pairRows .pair-row').forEach(row => {
+    const [selA, selB] = row.querySelectorAll('.pair-sel');
+    const curA = selA.value, curB = selB.value;
+    selA.innerHTML = fileOptions(poolA, curA);
+    selB.innerHTML = fileOptions(poolB, curB);
+  });
+}
+
+function onPairChange() {
+  const pairs = getPairs();
+  if (pairs.length === 0) {
+    document.getElementById('mappingSection').classList.add('hidden');
+    document.getElementById('runBtn').classList.add('hidden');
+    return;
+  }
+  // Use first pair's headers for column mapping
+  const firstA = poolA[pairs[0].nameA];
+  const firstB = poolB[pairs[0].nameB];
+  if (firstA && firstB) {
+    initMappingFromHeaders(firstA.headers, firstB.headers);
+    document.getElementById('mappingSection').classList.remove('hidden');
+    document.getElementById('runBtn').classList.remove('hidden');
+  }
+}
+
+function getPairs() {
+  return Array.from(document.querySelectorAll('#pairRows .pair-row')).map(row => {
+    const [selA, selB] = row.querySelectorAll('.pair-sel');
+    return {nameA: selA.value, nameB: selB.value};
+  }).filter(p => p.nameA && p.nameB
+    && poolA[p.nameA] && poolA[p.nameA].status === 'ready'
+    && poolB[p.nameB] && poolB[p.nameB].status === 'ready');
+}
+
+// ── Column Mapping ──
+let hA = [], hB = [];
+
+// ── Mapping memory ──
+// Remembers, per browser, which columns were used as Join Key / Compare / date
+// fields — keyed by a signature of the actual column headers (plus platform), not
+// by filename. So the same "shape" of report (e.g. TikTok Income export) restores
+// its mapping automatically next time, even with a different file name or date
+// range, without touching localStorage until there's a real mapping to save.
+const MAPPING_MEMORY_KEY = 'reconTool_mappingMemory_v1';
+
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+function mappingSignature(headersA, headersB) {
+  const a = [...headersA].sort().join('|');
+  const b = [...headersB].sort().join('|');
+  return selectedPlatform + '::' + hashStr(a) + '::' + hashStr(b);
+}
+function loadMappingMemory() {
+  try { return JSON.parse(localStorage.getItem(MAPPING_MEMORY_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function saveMappingMemory(store) {
+  try { localStorage.setItem(MAPPING_MEMORY_KEY, JSON.stringify(store)); }
+  catch (e) { /* storage unavailable/full — silently skip, not critical */ }
+}
+
+// Called after a successful run — remembers the mapping that was actually used.
+function saveCurrentMapping() {
+  if (!hA.length || !hB.length) return;
+  const maps = getMaps().map(m => ({ colA: m.colA, colB: m.colB, role: m.role, rules: m.rules }));
+  if (!maps.length) return;
+  const sig = mappingSignature(hA, hB);
+  const store = loadMappingMemory();
+  store[sig] = {
+    maps,
+    dateColA: document.getElementById('dateColA').value,
+    dateColB: document.getElementById('dateColB').value,
+    savedAt: new Date().toISOString(),
+  };
+  saveMappingMemory(store);
+}
+
+// Applies the saved normalization-rule checkboxes to a freshly-created map row.
+function applyRulesToRow(row, rules) {
+  row.querySelectorAll('.npill').forEach(label => {
+    const cb = label.querySelector('input');
+    const on = (rules || []).includes(cb.value);
+    cb.checked = on;
+    label.classList.toggle('on', on);
+  });
+}
+
+// Tries to restore a previously-saved mapping for this exact header signature.
+// Returns {dateColA, dateColB} on success (and rebuilds #mapRows), or null if
+// there's nothing saved / the saved columns no longer exist in this file.
+function tryRestoreMapping(headersA, headersB) {
+  const sig = mappingSignature(headersA, headersB);
+  const saved = loadMappingMemory()[sig];
+  if (!saved || !saved.maps || !saved.maps.length) return null;
+  const validMaps = saved.maps.filter(m => headersA.includes(m.colA) && headersB.includes(m.colB));
+  if (!validMaps.length) return null;
+
+  document.getElementById('mapRows').innerHTML = '';
+  validMaps.forEach(m => {
+    addMapRow(m.colA, m.colB, m.role === 'key');
+    applyRulesToRow(document.getElementById('mapRows').lastElementChild, m.rules);
+  });
+  showMappingMemoryBanner(saved.savedAt);
+  return { dateColA: saved.dateColA || '', dateColB: saved.dateColB || '' };
+}
+
+function showMappingMemoryBanner(savedAt) {
+  const banner = document.getElementById('mappingMemoryBanner');
+  const text = document.getElementById('mappingMemoryText');
+  const when = savedAt ? new Date(savedAt).toLocaleDateString() : '';
+  text.textContent = `📌 Mapping restored from a saved report with the same columns${when ? ' (saved ' + when + ')' : ''}.`;
+  banner.classList.remove('hidden');
+}
+
+function forgetSavedMapping() {
+  const sig = mappingSignature(hA, hB);
+  const store = loadMappingMemory();
+  delete store[sig];
+  saveMappingMemory(store);
+  document.getElementById('mappingMemoryBanner').classList.add('hidden');
+  // Fall back to auto-detecting common columns, same as a first-time upload
+  document.getElementById('mapRows').innerHTML = '';
+  const common = hA.filter(h => hB.includes(h));
+  (common.length ? common.slice(0, 4) : ['']).forEach((h, i) => addMapRow(h, h, i === 0));
+  populateDatePickers();
+}
+
+function initMappingFromHeaders(headersA, headersB) {
+  hA = headersA; hB = headersB;
+  let restoredDates = null;
+  // Only init if empty
+  if (document.querySelectorAll('#mapRows .map-row').length === 0) {
+    restoredDates = tryRestoreMapping(headersA, headersB);
+    if (!restoredDates) {
+      const common = hA.filter(h => hB.includes(h));
+      (common.length ? common.slice(0,4) : ['']).forEach((h, i) => addMapRow(h, h, i === 0));
+    }
+  } else {
+    // Rebuild select options in existing rows
+    document.querySelectorAll('#mapRows .map-row').forEach(row => {
+      const [sA, sB] = row.querySelectorAll('select');
+      const curA = sA.value, curB = sB.value;
+      sA.innerHTML = hA.map(h=>`<option value="${escapeHtml(h)}"${h===curA?' selected':''}>${escapeHtml(h)}</option>`).join('');
+      sB.innerHTML = hB.map(h=>`<option value="${escapeHtml(h)}"${h===curB?' selected':''}>${escapeHtml(h)}</option>`).join('');
+    });
+  }
+  populateDatePickers();
+  if (restoredDates) {
+    const dA = document.getElementById('dateColA');
+    const dB = document.getElementById('dateColB');
+    if (restoredDates.dateColA && [...dA.options].some(o => o.value === restoredDates.dateColA)) dA.value = restoredDates.dateColA;
+    if (restoredDates.dateColB && [...dB.options].some(o => o.value === restoredDates.dateColB)) dB.value = restoredDates.dateColB;
+  }
+}
+
+function populateDatePickers() {
+  const selA = document.getElementById('dateColA');
+  const selB = document.getElementById('dateColB');
+  selA.innerHTML = '<option value="">(none)</option>' +
+    hA.map(h=>`<option value="${h}"${/date|created|updated|period|time|month|day/i.test(h)?' selected':''}>${h}</option>`).join('');
+  selB.innerHTML = '<option value="">(none)</option>' +
+    hB.map(h=>`<option value="${h}"${/date|created|updated|period|time|month|statement/i.test(h)?' selected':''}>${h}</option>`).join('');
+}
+
+function addMapRow(cA='', cB='', isKey=false) {
+  const id = 'r'+Date.now()+Math.random().toString(36).slice(2);
+  const div = document.createElement('div');
+  div.className = 'map-row'; div.id = id;
+  div.dataset.role = isKey ? 'key' : 'compare';
+  const badgeClass = isKey ? 'key-badge' : 'compare-badge';
+  const badgeText  = isKey ? '🔑 Join Key' : 'Compare';
+  div.innerHTML = `
+    <div class="role-badge ${badgeClass}" onclick="toggleRole(this)" title="Click to toggle">${badgeText}</div>
+    <select>${hA.map(h=>`<option value="${escapeHtml(h)}"${h===cA?' selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+    <div class="arrow">→</div>
+    <select>${hB.map(h=>`<option value="${escapeHtml(h)}"${h===cB?' selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+    <div class="norm-wrap">${NORMS.map(n=>`<label class="npill" onclick="togglePill(this)"><input type="checkbox" value="${n.id}" style="display:none">${n.label}</label>`).join('')}</div>
+    <button class="rm-btn" onclick="document.getElementById('${id}').remove()" title="Remove">×</button>`;
+  document.getElementById('mapRows').appendChild(div);
+}
+
+function toggleRole(badge) {
+  const row = badge.closest('.map-row');
+  const wasKey = row.dataset.role === 'key';
+  row.dataset.role = wasKey ? 'compare' : 'key';
+  badge.className = 'role-badge ' + (wasKey ? 'compare-badge' : 'key-badge');
+  badge.textContent = wasKey ? 'Compare' : '🔑 Join Key';
+}
+
+function togglePill(el) {
+  const cb = el.querySelector('input');
+  cb.checked = !cb.checked;
+  el.classList.toggle('on', cb.checked);
+}
+
+function getMaps() {
+  return Array.from(document.querySelectorAll('#mapRows .map-row')).map(row => {
+    const sels = row.querySelectorAll('select');
+    const rules = Array.from(row.querySelectorAll('input[type=checkbox]')).filter(c=>c.checked).map(c=>c.value);
+    return {colA: sels[0].value, colB: sels[1].value, rules, role: row.dataset.role || 'compare'};
+  }).filter(m => m.colA && m.colB);
+}
+
+// ── Normalization ──
+// Extracts just the calendar date (YYYY-MM-DD) from a value that could be in any
+// of several shapes: "2026-06-18 23:41:09", "07/01/2026 1:23:15 PM", "2026-06-18",
+// "07/01/2026", or a raw Excel serial number (fallback, in case it slipped through
+// un-stringified). Returns '' if nothing date-like can be found, so it never
+// silently turns a real mismatch into a fake match.
+function normDateOnly(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (typeof v === 'number' && v > 20000 && v < 60000) {
+    const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+    if (!isNaN(d)) return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth()+1)}-${pad2(d.getUTCDate())}`;
+  }
+  const s = String(v).trim();
+  if (!s) return '';
+  const d = new Date(s);
+  if (!isNaN(d)) return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+  // Native parsing failed (unusual format) — try common patterns directly
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (m) return `${m[1]}-${pad2(+m[2])}-${pad2(+m[3])}`;
+  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if (m) return `${m[3]}-${pad2(+m[1])}-${pad2(+m[2])}`; // assumes MM/DD/YYYY
+  return s; // give up — leave as-is rather than guess wrong
+}
+
+function norm(val, rules) {
+  let v = String(val === null || val === undefined ? '' : val).trim();
+  // Always-on: 0, blank, and N/A-type values are treated as equivalent on every
+  // field, both sides — no per-column checkbox needed for this one.
+  // "0" is checked as a number, not just the exact string, so 0 / 0.0 / 0.00 / -0
+  // all count as the same zero instead of "0" matching blank while "0.00" doesn't.
+  const lv = v.toLowerCase().replace(/\s+/g,'');
+  const isNumericZero = /^-?\d+(\.\d+)?$/.test(v) && parseFloat(v) === 0;
+  if (v===''||isNumericZero||lv==='na'||lv==='n/a'||lv==='#na'||lv==='null') v='__EMPTY__';
+  if (rules.includes('date_only') && v !== '__EMPTY__') v = normDateOnly(v);
+  if (rules.includes('cancel_word') && v !== '__EMPTY__') {
+    // Treats "Cancel", "Cancelled", "Canceled", "Cancelling" etc. as the same status,
+    // regardless of which side's platform uses which spelling/tense.
+    const bare = v.toLowerCase().replace(/[^a-z]/g,'');
+    if (bare.startsWith('cancel')) v = 'CANCELLED';
+  }
+  if (rules.includes('order_id'))  v = v.replace(/[\s\-_#`']+/g,'').toUpperCase();
+  if (rules.includes('lowercase')) v = v.toLowerCase().replace(/[\s_]+/g,'');
+  if (rules.includes('round2')) { const n=parseFloat(v); if(!isNaN(n)) v=n.toFixed(2); }
+  if (rules.includes('round0')) { const n=parseFloat(v); if(!isNaN(n)) v=String(Math.round(n)); }
+  return v;
+}
+
+function buildKey(row, side, keys) {
+  return keys.map(k => norm(row[side==='A' ? k.colA : k.colB], k.rules)).join('|||');
+}
+
+// ── Run ──
+function runAll() {
+  const pairs = getPairs();
+  const maps  = getMaps();
+  const keys  = maps.filter(m => m.role === 'key');
+  const comps = maps.filter(m => m.role === 'compare');
+
+  if (!keys.length) { alert('Mark at least one column as a Join Key.'); return; }
+  if (!pairs.length) { alert('Add at least one file pair.'); return; }
+
+  saveCurrentMapping(); // remember this mapping for next time a report with the same columns shows up
+
+  allPairResults = pairs.map(pair => {
+    const dA = poolA[pair.nameA].rows;
+    const dB = poolB[pair.nameB].rows;
+    const mA = new Map(), mB = new Map();
+    dA.forEach(r => mA.set(buildKey(r,'A',keys), r));
+    dB.forEach(r => mB.set(buildKey(r,'B',keys), r));
+    const allKeys = new Set([...mA.keys(), ...mB.keys()]);
+    const results = [];
+    allKeys.forEach(k => {
+      const rA = mA.get(k), rB = mB.get(k);
+      if (!rA) {
+        const details = comps.map(m => ({colA:m.colA, colB:m.colB, va:'', vb:String(rB[m.colB]??''), match:false}));
+        results.push({key:k, status:'only_in_B', rowA:null, rowB:rB, details}); return;
+      }
+      if (!rB) {
+        const details = comps.map(m => ({colA:m.colA, colB:m.colB, va:String(rA[m.colA]??''), vb:'', match:false}));
+        results.push({key:k, status:'only_in_A', rowA:rA,  rowB:null, details}); return;
+      }
+      let ok = true;
+      const details = comps.map(m => {
+        const va = norm(rA[m.colA], m.rules), vb = norm(rB[m.colB], m.rules);
+        const match = (va==='__EMPTY__' && vb==='__EMPTY__') || va===vb;
+        if (!match) ok = false;
+        return {colA:m.colA, colB:m.colB, va:String(rA[m.colA]??''), vb:String(rB[m.colB]??''), match};
+      });
+      results.push({key:k, status:ok?'match':'mismatch', rowA:rA, rowB:rB, details});
+    });
+    return {
+      label: `${pair.nameA.replace(/\.[^.]+$/,'')} ↔ ${pair.nameB.replace(/\.[^.]+$/,'')}`,
+      nameA: pair.nameA, nameB: pair.nameB,
+      results,
+      headersA: poolA[pair.nameA].headers,
+      headersB: poolB[pair.nameB].headers,
+    };
+  });
+
+  // Aggregate stats
+  const allResults = allPairResults.flatMap(p => p.results);
+  document.getElementById('sTotal').textContent = allResults.length;
+  document.getElementById('sMatch').textContent = allResults.filter(r=>r.status==='match').length;
+  document.getElementById('sMm').textContent    = allResults.filter(r=>r.status==='mismatch').length;
+  document.getElementById('sOnlyA').textContent = allResults.filter(r=>r.status==='only_in_A').length;
+  document.getElementById('sOnlyB').textContent = allResults.filter(r=>r.status==='only_in_B').length;
+
+  renderPairTabs();
+  document.getElementById('resultsSection').classList.remove('hidden');
+  document.getElementById('resultsSection').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+// ── Render tabs per pair ──
+function renderPairTabs() {
+  const tabBar   = document.getElementById('pairTabs');
+  const tabBodies = document.getElementById('pairTabBodies');
+  tabBar.innerHTML = '';
+  tabBodies.innerHTML = '';
+
+  allPairResults.forEach((pair, i) => {
+    // Tab button
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (i===0?' active':'');
+    tab.textContent = `Pair ${i+1}: ${pair.label}`;
+    tab.onclick = () => switchPairTab(i);
+    tabBar.appendChild(tab);
+
+    // Tab body
+    const body = document.createElement('div');
+    body.id = `pairBody_${i}`;
+    body.className = i===0 ? '' : 'hidden';
+    body.innerHTML = renderPairBody(pair);
+    tabBodies.appendChild(body);
+  });
+}
+
+function switchPairTab(idx) {
+  document.querySelectorAll('#pairTabs .tab').forEach((t,i) => t.classList.toggle('active', i===idx));
+  document.querySelectorAll('#pairTabBodies > div').forEach((b,i) => b.classList.toggle('hidden', i!==idx));
+}
+
+function renderPairBody(pair) {
+  const maps  = getMaps();
+  const keys  = maps.filter(m => m.role === 'key');
+  const comps = maps.filter(m => m.role === 'compare');
+  const r = pair.results;
+  const matchCount = r.filter(x=>x.status==='match').length;
+  const mmCount    = r.filter(x=>x.status==='mismatch').length;
+  const onlyA      = r.filter(x=>x.status==='only_in_A').length;
+  const onlyB      = r.filter(x=>x.status==='only_in_B').length;
+
+  const miniStats = `
+    <div class="pair-result-header">
+      <strong>${pair.label}</strong>
+      <span class="pair-badge pb-match">${matchCount} matched</span>
+      <span class="pair-badge pb-mm">${mmCount} mismatched</span>
+      <span class="pair-badge pb-miss">${onlyA} only-A &nbsp;·&nbsp; ${onlyB} only-B</span>
+    </div>`;
+
+  const uid = pair.label.replace(/[^a-z0-9]/gi,'_');
+  const innerTabHtml = `
+    <div class="inner-tabs">
+      <div class="inner-tab active" onclick="switchInnerTab('rows_${uid}','ins_${uid}',this)">Row Results</div>
+      <div class="inner-tab" onclick="switchInnerTab('ins_${uid}','rows_${uid}',this)">Insights</div>
+    </div>
+    <div id="rows_${uid}">${buildTable(r, keys, comps)}</div>
+    <div id="ins_${uid}" class="hidden">${buildInsights(r)}</div>`;
+
+  return miniStats + innerTabHtml;
+}
+
+function switchInnerTab(showId, hideId, el) {
+  document.getElementById(showId).classList.remove('hidden');
+  document.getElementById(hideId).classList.add('hidden');
+  el.closest('.inner-tabs').querySelectorAll('.inner-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function buildTable(results, keys, comps) {
+  const sorted = [...results].sort((a,b)=>{const o={mismatch:0,only_in_A:1,only_in_B:2,match:3};return(o[a.status]??4)-(o[b.status]??4);});
+  const heads = [
+    ...keys.flatMap(k => [k.colA+' (A)', k.colB+' (B)']),
+    'Status',
+    ...comps.flatMap(m => [m.colA+' (A)', m.colB+' (B)'])
+  ];
+  let html = `<div class="tbl-wrap"><table><thead><tr>${heads.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+  sorted.slice(0,500).forEach(r => {
+    const badge = r.status==='match'
+      ? '<span class="badge b-match">Match</span>'
+      : r.status==='mismatch'
+        ? '<span class="badge b-mm">Mismatch</span>'
+        : '<span class="badge b-miss">Missing</span>';
+    const keyCells = keys.flatMap(k => {
+      const rawA = r.rowA ? String(r.rowA[k.colA] ?? '') : '';
+      const rawB = r.rowB ? String(r.rowB[k.colB] ?? '') : '';
+      const match = norm(rawA, k.rules) === norm(rawB, k.rules);
+      const colA = rawA ? (match ? '#16A34A' : '#DC2626') : '#D1D5DB';
+      const colB = rawB ? (match ? '#16A34A' : '#DC2626') : '#D1D5DB';
+      return [
+        rawA ? `<td><span style="font-family:monospace;font-size:11px;color:${colA}">${rawA}</span></td>` : '<td><span style="color:#D1D5DB;font-size:11px;font-style:italic">—</span></td>',
+        rawB ? `<td><span style="font-family:monospace;font-size:11px;color:${colB}">${rawB}</span></td>` : '<td><span style="color:#D1D5DB;font-size:11px;font-style:italic">—</span></td>',
+      ];
+    }).join('');
+    const compCells = r.details.flatMap(d => [
+      `<td style="color:${d.match?'#9CA3AF':'#DC2626'}">${d.va}</td>`,
+      `<td style="color:${d.match?'#9CA3AF':'#DC2626'}">${d.vb}</td>`
+    ]).join('');
+    html += `<tr>${keyCells}<td>${badge}</td>${compCells}</tr>`;
+  });
+  html += '</tbody></table></div>';
+  if (sorted.length>500) html += `<p class="note">Showing 500 of ${sorted.length} rows.</p>`;
+  return html;
+}
+
+function buildInsights(results) {
+  const maps  = getMaps();
+  const keys  = maps.filter(m => m.role === 'key');
+  const bad = results.filter(r => r.status !== 'match');
+  const colA = document.getElementById('dateColA').value;
+  const colB = document.getElementById('dateColB').value;
+
+  const colCounts = {};
+  results.filter(r=>r.status==='mismatch').forEach(r => {
+    r.details.filter(d=>!d.match).forEach(d => {
+      const lbl = d.colA===d.colB ? d.colA : `${d.colA}/${d.colB}`;
+      colCounts[lbl] = (colCounts[lbl]||0)+1;
+    });
+  });
+
+  let insightHtml = '<div class="insight-grid">';
+
+  if (colA||colB) {
+    const dc = {};
+    bad.forEach(r => { const d = getDateForRow(r)||'(no date)'; dc[d]=(dc[d]||0)+1; });
+    insightHtml += makeBarCardHtml(`Issues by Date`, dc, '#4F6EF7', 10);
+  } else {
+    insightHtml += `<div class="insight-card"><h3>Issues by Date</h3><p style="font-size:12px;color:#9CA3AF">No date field selected.</p></div>`;
+  }
+
+  insightHtml += makeBarCardHtml('Issue Type', {
+    'Value mismatch': results.filter(r=>r.status==='mismatch').length,
+    'Only in A': results.filter(r=>r.status==='only_in_A').length,
+    'Only in B': results.filter(r=>r.status==='only_in_B').length,
+  }, '#7C3AED', 5);
+
+  insightHtml += makeBarCardHtml('Mismatch by Column', colCounts, '#DC2626', 8);
+
+  insightHtml += makeBarCardHtml('Missing Direction', {
+    'Missing from Snowflake (only in A)': results.filter(r=>r.status==='only_in_A').length,
+    'Missing from Seller Center (only in B)': results.filter(r=>r.status==='only_in_B').length,
+  }, '#D97706', 5);
+
+  insightHtml += '</div>';
+
+  // Action box
+  const dc2 = {};
+  bad.forEach(r => { const d = getDateForRow(r)||'(no date)'; dc2[d]=(dc2[d]||0)+1; });
+  const topDate = Object.entries(dc2).sort((a,b)=>b[1]-a[1])[0];
+  const topCol  = Object.entries(colCounts).sort((a,b)=>b[1]-a[1])[0];
+  const onlyA   = results.filter(r=>r.status==='only_in_A').length;
+  const onlyB   = results.filter(r=>r.status==='only_in_B').length;
+  const actions = [];
+  if (topDate) actions.push(`Focus on <strong>${topDate[0]}</strong> — most issues (${topDate[1]} rows).`);
+  if (topCol)  actions.push(`Column <strong>${topCol[0]}</strong> mismatches most (${topCol[1]} rows).`);
+  if (onlyA>onlyB) actions.push(`${onlyA} records in Seller Center missing from Snowflake — likely ingestion gaps.`);
+  else if (onlyB>onlyA) actions.push(`${onlyB} records in Snowflake missing from Seller Center — check for extra rows.`);
+  if (actions.length) {
+    insightHtml += `<div class="action-box"><strong>💡 Next Steps</strong>${actions.map(a=>`<p>• ${a}</p>`).join('')}</div>`;
+  }
+  return insightHtml;
+}
+
+function makeBarCardHtml(title, counts, fillColor, maxItems) {
+  const entries = Object.entries(counts).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,maxItems);
+  const max = entries[0] ? entries[0][1] : 1;
+  return `<div class="insight-card"><h3>${title}</h3>` +
+    (entries.length
+      ? entries.map(([k,v])=>`<div class="bar-row"><div class="bar-label" title="${k}">${k}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(v/max*100)}%;background:${fillColor}"></div></div><div class="bar-count">${v}</div></div>`).join('')
+      : '<p style="font-size:12px;color:#9CA3AF">No issues</p>') +
+    '</div>';
+}
+
+function getDateForRow(r) {
+  const colA = document.getElementById('dateColA').value;
+  const colB = document.getElementById('dateColB').value;
+  if (r.rowA && colA && r.rowA[colA]!==undefined) return parseDate(r.rowA[colA]);
+  if (r.rowB && colB && r.rowB[colB]!==undefined) return parseDate(r.rowB[colB]);
+  return null;
+}
+
+function parseDate(v) {
+  if (!v && v!==0) return null;
+  if (typeof v==='number' && v>40000 && v<60000)
+    return new Date((v-25569)*86400*1000).toISOString().slice(0,10);
+  const s = String(v);
+  const m = s.match(/(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})|(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/);
+  if (m) return m[0].replace(/\//g,'-');
+  const mo = s.match(/(\d{4}-\d{2})/);
+  if (mo) return mo[0];
+  return s.slice(0,10)||null;
+}
+
+// ── Field Match Summary (per pair) ──
+// One row per compared field: % of rows that matched, a rough status bucket,
+// and an auto-generated remark (counts + most common differing value pair).
+// Note: real cell colors aren't written here (SheetJS community build strips
+// fill styles on export) — Match % is left as a plain number so the user can
+// apply Excel's built-in Conditional Formatting > Color Scales on that column.
+function buildFieldSummaryRows(pair, comps) {
+  // Include every row — match, mismatch, AND rows missing entirely from one side.
+  // A row that's only in A/B already has match:false baked into its per-field
+  // details (see runAll()), so counting it here correctly drags the % down instead
+  // of pretending a field "matched" just because it was excluded from the count.
+  const rows = pair.results;
+  const total = rows.length;
+  return comps.map(m => {
+    const label = m.colA === m.colB ? m.colA : `${m.colA} / ${m.colB}`;
+    let mismatchCount = 0;
+    const pairCounts = {};
+    rows.forEach(r => {
+      const d = r.details.find(x => x.colA === m.colA && x.colB === m.colB);
+      if (d && !d.match) {
+        mismatchCount++;
+        const k = `${d.va || '(blank)'} vs ${d.vb || '(blank)'}`;
+        pairCounts[k] = (pairCounts[k]||0) + 1;
+      }
+    });
+    const pct = total ? +(((total - mismatchCount) / total) * 100).toFixed(4) : 100;
+    let remarks;
+    if (mismatchCount === 0) {
+      remarks = 'Matched 100%.';
+    } else {
+      const top = Object.entries(pairCounts).sort((a,b)=>b[1]-a[1])[0];
+      remarks = `${mismatchCount} of ${total} row(s) differ` + (top ? ` — most common: ${top[0]} (${top[1]}x).` : '.');
+    }
+    const status = pct === 100 ? 'OK' : pct >= 95 ? 'Watch' : 'Issue';
+    return {'Field Name': label, 'Match %': pct, 'Status': status, 'Remarks': remarks};
+  });
+}
+
+// Excel sheet names: max 31 chars, can't contain : \ / ? * [ ]. This builds a
+// unique, readable sheet name from the actual comparison (file A ↔ file B) instead
+// of a generic "pair1", "pair2" — and falls back to a numbered suffix (~2, ~3...)
+// if two pairs truncate down to the same name.
+function makeSheetNamer() {
+  const used = new Set();
+  return function excelSheetName(base, suffix) {
+    const clean = String(base).replace(/[:\\\/\?\*\[\]]/g, '-').replace(/\s+/g, ' ').trim() || 'Sheet';
+    let maxBase = Math.max(1, 31 - suffix.length);
+    let name = clean.slice(0, maxBase) + suffix;
+    let n = 2;
+    while (used.has(name)) {
+      const tag = '~' + n;
+      maxBase = Math.max(1, 31 - suffix.length - tag.length);
+      name = clean.slice(0, maxBase) + tag + suffix;
+      n++;
+    }
+    used.add(name);
+    return name;
+  };
+}
+
+// ── Export ──
+function exportExcel() {
+  const wb = XLSX.utils.book_new();
+  const maps  = getMaps();
+  const keys  = maps.filter(m => m.role === 'key');
+  const comps = maps.filter(m => m.role === 'compare');
+  const sheetName = makeSheetNamer();
+
+  allPairResults.forEach((pair, idx) => {
+    const base = pair.label || `Pair ${idx+1}`;
+
+    // Field Match Summary — first sheet so mismatched fields are visible right away
+    const fieldSummaryRows = buildFieldSummaryRows(pair, comps);
+    if (fieldSummaryRows.length) {
+      const fsSheet = XLSX.utils.json_to_sheet(fieldSummaryRows);
+      fsSheet['!cols'] = [{wch:30},{wch:10},{wch:8},{wch:70}];
+      XLSX.utils.book_append_sheet(wb, fsSheet, sheetName(base, '_fields'));
+    }
+
+    const mm = pair.results.filter(r => r.status === 'mismatch');
+    if (mm.length) {
+      // Side-by-side layout: A/B columns interleaved per field, same order as the on-screen table
+      const rows = mm.map(r => {
+        const obj = {__status:'mismatch', __key:r.key};
+        keys.forEach(k => {
+          obj[k.colA+' (A)'] = r.rowA ? r.rowA[k.colA] ?? '' : '';
+          obj[k.colB+' (B)'] = r.rowB ? r.rowB[k.colB] ?? '' : '';
+        });
+        comps.forEach(m => {
+          const d = r.details.find(x => x.colA === m.colA && x.colB === m.colB);
+          obj[m.colA+' (A)'] = d ? d.va : (r.rowA ? r.rowA[m.colA]??'' : '');
+          obj[m.colB+' (B)'] = d ? d.vb : (r.rowB ? r.rowB[m.colB]??'' : '');
+          obj['DIFF_'+m.colA] = d && !d.match ? '⚠ '+d.va+' ≠ '+d.vb : '';
+        });
+        return obj;
+      });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), sheetName(base, '_mismatch'));
+    }
+    const onlyA = pair.results.filter(r => r.status === 'only_in_A');
+    if (onlyA.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(onlyA.map(r=>({__status:'only_in_A',__key:r.key,...(r.rowA||{})}))), sheetName(base, '_onlyA'));
+    const onlyB = pair.results.filter(r => r.status === 'only_in_B');
+    if (onlyB.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(onlyB.map(r=>({__status:'only_in_B',__key:r.key,...(r.rowB||{})}))), sheetName(base, '_onlyB'));
+
+    // Date summary per pair
+    const dateSummary = {};
+    pair.results.forEach(r => {
+      const d = getDateForRow(r)||'(no date)';
+      if (!dateSummary[d]) dateSummary[d]={date:d,total:0,match:0,mismatch:0,only_in_A:0,only_in_B:0};
+      dateSummary[d].total++;
+      dateSummary[d][r.status]=(dateSummary[d][r.status]||0)+1;
+    });
+    const summaryRows = Object.values(dateSummary).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+    summaryRows.forEach(r => { r.issue_rate = r.total ? ((r.mismatch+r.only_in_A+r.only_in_B)/r.total*100).toFixed(1)+'%' : '0%'; });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), sheetName(base, '_summary'));
+  });
+
+  const today = new Date().toISOString().slice(0,10);
+  const shop  = (document.getElementById('shopName').value.trim()||'Unknown Shop').replace(/[/\\?%*:|"<>]/g,'-');
+  const dp    = (document.getElementById('dataPoint').value.trim()||'Unknown Data').replace(/[/\\?%*:|"<>]/g,'-');
+  XLSX.writeFile(wb, `${today} - ${shop} - ${dp} - reconciliation (Snowflake vs Seller Center).xlsx`);
+}
+</script>
+</body>
+</html>

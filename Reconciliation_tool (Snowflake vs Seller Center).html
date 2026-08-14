@@ -1286,11 +1286,15 @@ function renderPairBody(pair) {
 
   const uid = pair.label.replace(/[^a-z0-9]/gi,'_');
   const tabIds = [`rows_${uid}`, `ins_${uid}`, `tot_${uid}`];
+  // Build the array literal with single-quoted strings (not JSON.stringify, which
+  // uses double quotes) so it can sit safely inside a double-quoted onclick="..."
+  // attribute without the browser cutting the attribute short at the first ".
+  const tabIdsJs = `[${tabIds.map(id => `'${id}'`).join(',')}]`;
   const innerTabHtml = `
     <div class="inner-tabs">
-      <div class="inner-tab active" onclick="switchInnerTab('rows_${uid}',${JSON.stringify(tabIds)},this)">Row Results</div>
-      <div class="inner-tab" onclick="switchInnerTab('ins_${uid}',${JSON.stringify(tabIds)},this)">Insights</div>
-      <div class="inner-tab" onclick="switchInnerTab('tot_${uid}',${JSON.stringify(tabIds)},this)">Totals${pair.totals.length ? ` (${pair.totals.length})` : ''}</div>
+      <div class="inner-tab active" onclick="switchInnerTab('rows_${uid}',${tabIdsJs},this)">Row Results</div>
+      <div class="inner-tab" onclick="switchInnerTab('ins_${uid}',${tabIdsJs},this)">Insights</div>
+      <div class="inner-tab" onclick="switchInnerTab('tot_${uid}',${tabIdsJs},this)">Totals${pair.totals.length ? ` (${pair.totals.length})` : ''}</div>
     </div>
     <div id="rows_${uid}">${buildTable(r, keys, comps)}</div>
     <div id="ins_${uid}" class="hidden">${buildInsights(r)}</div>

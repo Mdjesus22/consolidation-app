@@ -471,6 +471,7 @@ let allPairResults = []; // [{label, results}]
 // a checkbox you have to remember to tick.
 const NORMS = [
   {id:'order_id',   label:'Order ID cleanup'},
+  {id:'seller_sku', label:'Seller SKU cleanup (strip leading 0s)'},
   {id:'round2',     label:'Round 2 dec'},
   {id:'round0',     label:'Round 0 dec'},
   {id:'lowercase',  label:'Lowercase+strip _'},
@@ -1141,6 +1142,13 @@ function norm(val, rules) {
     if (bare.startsWith('cancel')) v = 'CANCELLED';
   }
   if (rules.includes('order_id'))  v = v.replace(/[\s\-_#`']+/g,'').toUpperCase();
+  if (rules.includes('seller_sku') && v !== '__EMPTY__') {
+    // sellerSku sometimes exports with a leading zero on one side (e.g. Snowflake
+    // keeps "074312012723" while Seller Center shows "74312012723") — strip
+    // non-alphanumerics and leading zeros so both sides key the same way.
+    v = v.replace(/[\s\-_#`']+/g,'').toUpperCase();
+    if (/^\d+$/.test(v)) v = v.replace(/^0+(?=\d)/, '');
+  }
   if (rules.includes('lowercase')) v = v.toLowerCase().replace(/[\s_]+/g,'');
   if (rules.includes('round2')) { const n=parseFloat(cleanNumStr(v)); if(!isNaN(n)) v=n.toFixed(2); }
   if (rules.includes('round0')) { const n=parseFloat(cleanNumStr(v)); if(!isNaN(n)) v=String(Math.round(n)); }
